@@ -1,0 +1,13 @@
+*.o
+*/build/*
+
+# artefacts for keil
+*.uvopt
+*.uvgui.*
+*.uvguix.*
+JLinkLog.txt
+
+# artefacts for VS Code
+.vscode/
+
+
