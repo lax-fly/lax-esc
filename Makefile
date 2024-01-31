@@ -13,9 +13,9 @@
 ######################################
 # target
 ######################################
-TARGET = AT32F421
-MCU_FAMILY = AT32F421
-DEVICE = AT32F421x8
+TARGET = at32f421
+MCU_FAMILY = at32f421
+DEVICE = at32f421x8
 FLASH_SIZE = 64k
 RAM_SIZE = 16k
 HEAP_SIZE = 0X800
@@ -24,13 +24,13 @@ STACK_SIZE = 0X400
 #######################################
 # download script
 #######################################
-DOWNLOAD_SCRIP = "../script/jlink-download.sh"
+DOWNLOAD_SCRIP = "script/jlink-download.sh"
 
 #######################################
 # link script
 #######################################
 
-LDSCRIPT := ../linker/gcc/$(MCU_FAMILY)_FLASH.ld
+LDSCRIPT := linker/$(MCU_FAMILY)_flash.ld
 
 ######################################
 # building variables
@@ -50,22 +50,22 @@ BUILD_DIR = build
 ######################################
 # source
 ######################################
-APP_LAYER_DIR = ../src/app
-MTR_LAYER_DIR = ../src/motor
-PRO_LAYER_DIR = ../src/protocol
-MSP_LAYER_DIR = ../src/msp
-START_UP_DIR = ../src/startup/gcc
+APP_LAYER_DIR = src/app
+MTR_LAYER_DIR = src/motor
+PRO_LAYER_DIR = src/protocol
+MSP_LAYER_DIR = src/msp
+START_UP_DIR = src/startup/$(MCU_FAMILY)
 
 APP_LAYER_INCLUDE  = $(APP_LAYER_DIR) $(MTR_LAYER_DIR) $(MSP_LAYER_DIR) $(PRO_LAYER_DIR)
 MTR_LAYER_INCLUDE  = $(MTR_LAYER_DIR) $(MTR_LAYER_DIR)/src $(MSP_LAYER_DIR)
 PRO_LAYER_INCLUDE  = $(PRO_LAYER_DIR) $(PRO_LAYER_DIR)/src $(MSP_LAYER_DIR)
-MSP_LAYER_INCLUDE  = $(MSP_LAYER_DIR) $(MSP_LAYER_DIR)/src/$(MCU_FAMILY) $(MSP_LAYER_DIR)/src/$(MCU_FAMILY)/stdlib ../src/msp/src/cm4
+MSP_LAYER_INCLUDE  = $(MSP_LAYER_DIR) $(MSP_LAYER_DIR)/src/$(MCU_FAMILY) $(MSP_LAYER_DIR)/src/$(MCU_FAMILY)/stdlib src/msp/src/cm4
 
 SOURCES_DIR = $(START_UP_DIR) $(APP_LAYER_DIR) $(MTR_LAYER_DIR)/src $(PRO_LAYER_DIR)/src $(MSP_LAYER_DIR)/src $(MSP_LAYER_DIR)/src/$(MCU_FAMILY) $(MSP_LAYER_DIR)/src/$(MCU_FAMILY)/stdlib
 
 SOURCES = $(wildcard $(foreach i,$(SOURCES_DIR),$(i)/*.c $(i)/*.cpp $(i)/*.s))
 
-OBJECTS  = $(addsuffix .o,$(basename $(SOURCES:../src/%=%)))
+OBJECTS  = $(addsuffix .o,$(basename $(SOURCES:src/%=%)))
 
 #######################################
 # binaries
@@ -158,17 +158,17 @@ define get_include_dir
 	esac; echo -n $${INCLUDE_DIR} > $(BUILD_DIR)/include.tmp
 endef
 
-$(BUILD_DIR)/%.o: ../src/%.c Makefile
+$(BUILD_DIR)/%.o: src/%.c Makefile
 	$(call make_build_dir,$@)
 	$(call get_include_dir,$@)
 	$(CC) $(CFLAGS) `cat $(BUILD_DIR)/include.tmp` -c $< -o $@
 
-$(BUILD_DIR)/%.o: ../src/%.cpp Makefile
+$(BUILD_DIR)/%.o: src/%.cpp Makefile
 	$(call make_build_dir,$@)
 	$(call get_include_dir,$@)
 	$(CXX) $(CFLAGS) `cat $(BUILD_DIR)/include.tmp` -c $< -o $@
 	
-$(BUILD_DIR)/%.o: ../src/%.s Makefile
+$(BUILD_DIR)/%.o: src/%.s Makefile
 	$(call make_build_dir,$@)
 	$(AS) -c $(CFLAGS) $< -o $@
 

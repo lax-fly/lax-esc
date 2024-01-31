@@ -10,7 +10,7 @@ MCU_FLY=$1
 HEX_FILE=$2
 
 case $MCU_FLY in
-    AT32F421?8*)
+    at32f421?8*)
     DEVICE=-AT32F421G8U7
     ;;
     *)
@@ -20,15 +20,15 @@ case $MCU_FLY in
 esac
 
 ########## J-Link command line script ###########
-# 选择SW接口
-# 设置接口速率4000kHz
-# 设置芯片型号
-# 复位芯片
-# 暂停芯片
-# 擦除
-# 下载程序
-# 运行
-# 退出jlink命令行
+# select interface sw
+# set interface rate to 4000kHz
+# set mcu version
+# reset mcu
+# pause mcu
+# erase flash
+# download
+# run
+# exit jlink cmd line
 #################################################
 echo "
 si 1
