@@ -1,0 +1,22 @@
+{
+    "configurations": [ // just used for code viewing, have no effect on compiling
+        {
+            "name": "lax-vtx",
+            "includePath": [
+                "${workspaceFolder}/src/**"
+            ],
+            "defines": [
+                "AT32F421G8U7",
+                "USE_STDPERIPH_DRIVER"
+            ],
+            "compilerPath": "D:/develop/gcc-arm/bin/arm-none-eabi-g++.exe",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-arm",
+            "forcedInclude": [
+                
+            ]
+        }
+    ],
+    "version": 4
+}
