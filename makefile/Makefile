@@ -131,7 +131,7 @@ CFLAGS += -DNDEBUG
 endif
 
 # Generate dependency information
-CFLAGS += #-MMD -MP -MF"$(@:%.o=%.d)"
+CFLAGS += -MMD -MP -MF"$(@:%.o=%.d)"
 
 #######################################
 # LDFLAGS
@@ -155,17 +155,17 @@ define get_include_dir
 		*msp*) INCLUDE_DIR="$(foreach i,$(MSP_LAYER_INCLUDE),-I$(i))";; \
 		*protocol*) INCLUDE_DIR="$(foreach i,$(PRO_LAYER_INCLUDE),-I$(i))";; \
 		*) echo "#######  error object: $(1) ########" ;; \
-	esac;
+	esac; echo -n $${INCLUDE_DIR} > $(BUILD_DIR)/include.tmp
 endef
 
 $(BUILD_DIR)/%.o: ../src/%.c Makefile
 	$(call make_build_dir,$@)
-	$(call get_include_dir,$@) echo -n $${INCLUDE_DIR} > $(BUILD_DIR)/include.tmp
+	$(call get_include_dir,$@)
 	$(CC) $(CFLAGS) `cat $(BUILD_DIR)/include.tmp` -c $< -o $@
 
 $(BUILD_DIR)/%.o: ../src/%.cpp Makefile
 	$(call make_build_dir,$@)
-	$(call get_include_dir,$@) echo -n $${INCLUDE_DIR} > $(BUILD_DIR)/include.tmp
+	$(call get_include_dir,$@)
 	$(CXX) $(CFLAGS) `cat $(BUILD_DIR)/include.tmp` -c $< -o $@
 	
 $(BUILD_DIR)/%.o: ../src/%.s Makefile
@@ -209,4 +209,4 @@ download: $(BUILD_DIR)/$(TARGET).hex
 #######################################
 # dependencies
 #######################################
-#-include $(wildcard $(BUILD_DIR)/*.d)
+-include $(wildcard $(BUILD_DIR)/*/*.d)
