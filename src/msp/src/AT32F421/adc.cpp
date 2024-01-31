@@ -10,7 +10,7 @@ static adc_channel_select_type pin2channel(Pin pin)
     return (adc_channel_select_type)GPIO2IDX(pin);
 }
 
-uint16_t Adc::sample_value(void) const
+uint32_t Adc::sample_value(void) const
 {
     ADC1->osq3 = ch;   // change channel to this adc object
     ADC1->ctrl2_bit.ocswtrg = 1;
@@ -20,14 +20,9 @@ uint16_t Adc::sample_value(void) const
     return ADC1->odt_bit.odt;
 }
 
-uint32_t Adc::value_range(void) const
+uint32_t Adc::sample_voltage(void) const
 {
-    return 4096;
-}
-
-float Adc::sample_voltage(void) const
-{
-    return sample_value() / 4095.0f * 3.28f;
+    return sample_value() * 3280 / 4096;
 }
 
 

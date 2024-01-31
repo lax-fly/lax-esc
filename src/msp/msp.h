@@ -99,6 +99,7 @@ class ComparatorIf
 {
 public:
     virtual ~ComparatorIf() {}
+    // make sure the cmp's output delay is below 1us and hysteresis below 10mV, or this driver may not work properly
     virtual uint8_t cmp_result() const = 0;
     // out_pin is not necessary, and used for debug, set out_pin to PIN_NONE when not used;
     static ComparatorIf *new_instance(Pin pos_pin, Pin neg_pin, Pin out_pin);
@@ -108,9 +109,7 @@ class AdcIf
 {
 public:
     virtual ~AdcIf() {}
-    virtual uint16_t sample_value(void) const = 0; // the implementing code must be done in 2us, which means the sample rate should be higher than 500kHz
-    virtual uint32_t value_range(void) const = 0;  // return the adc value range, such as 4096 for 12bit adc
-    virtual float sample_voltage(void) const = 0;
+    virtual uint32_t sample_voltage(void) const = 0;   // in mV, // the implementing code must be done in 2us, which means the sample rate should be higher than 500kHz
     static AdcIf *new_instance(Pin pin);
 };
 

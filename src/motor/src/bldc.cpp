@@ -4,8 +4,30 @@
 #include <assert.h>
 #include <stdio.h>
 
-#define VALID_BEMF 0.05f // V
-#define MIN_VALID_ERPM 6000
+enum Angle
+{
+    ANGLE_3_75 = 4, // degree 3.75
+    ANGLE_7_5 = 3,  // degree 7.5
+    ANGLE_15 = 2,   // degree 15
+    ANGLE_30 = 1,   // degree 30
+};
+
+/*********************** motor parameters *****************************/
+
+static float throttle = 0; // 0~1
+static float min_throttle = 0.05f;
+static uint32_t polar_cnt = 14;         // the polar count of the target motor
+static uint32_t kv = 1400;              // rpm/v while empty load, used to judge current load
+static uint32_t blind_interval = 20000; // us
+static uint32_t startup_freq = 5000;    // Hz
+static Angle commutate_angle = ANGLE_30;
+static uint32_t bemf_threshold = 50;    // mV
+static uint32_t max_pwm_freq = 50000; // Hz
+static uint32_t current_gain = 40;
+
+/**********************************************************************/
+
+#define MIN_VALID_ERPM 8000
 
 #define ARRAY_CNT(x) (sizeof(x) / sizeof(x[0]))
 
@@ -41,28 +63,6 @@ static TimerIf *timer;
 #ifndef NDEBUG
 static GpioIf *debug_pin;
 #endif
-
-enum Angle
-{
-    ANGLE_3_75 = 4, // degree 3.75
-    ANGLE_7_5 = 3,  // degree 7.5
-    ANGLE_15 = 2,   // degree 15
-    ANGLE_30 = 1,   // degree 30
-};
-
-/*********************** motor parameters *****************************/
-
-static float throttle = 0; // 0~1
-static float min_throttle = 0.05f;
-static uint32_t polar_cnt = 14;         // the polar count of the target motor
-static uint32_t kv = 1400;              // rpm/v while empty load, used to judge current load
-static uint32_t blind_interval = 20000; // us
-static uint32_t startup_freq = 5000;    // Hz
-static Angle commutate_angle = ANGLE_30;
-static uint32_t max_pwm_freq = 50000; // Hz
-static float current_gain = 40;
-
-/**********************************************************************/
 
 static float batery_voltage = 12; // default 12v, will be updated when adc sampled the voltage
 static uint32_t erpm = 0;
@@ -162,12 +162,12 @@ void set_frequency(uint32_t pwm_freq)
  * |              | next step at  | next step at | next step at | which adc used | which cmp used | which pwm is |
  * | current step | falling edge  | rising edge  | stalling     | by float pin   | by float pin   | being used   |
  * |--------------|-------------- |--------------|--------------|----------------|----------------|--------------|
- * |    0-BC      |     2-AB      |    1-AC      |     2-AB     |   adc_a        |     cmp_a      |   hb         |
- * |    1-AC      |     2-AB      |    3-CB      |     3-CB     |   adc_b        |     cmp_b      |   ha         |
- * |    2-AB      |     4-CA      |    3-CB      |     4-CA     |   adc_c        |     cmp_c      |   ha         |
- * |    3-CB      |     4-CA      |    5-BA      |     5-BA     |   adc_a        |     cmp_a      |   hc         |
- * |    4-CA      |     0-BC      |    5-BA      |     0-BC     |   adc_b        |     cmp_b      |   hc         |
- * |    5-BA      |     0-BC      |    1-AC      |     1-AC     |   adc_c        |     cmp_c      |   hb         |
+ * |    0-BC      |     2-AB      |    1-AC      |     2-AB     |   adc_a        |     cmp_a      |     hb       |
+ * |    1-AC      |     2-AB      |    3-CB      |     3-CB     |   adc_b        |     cmp_b      |     ha       |
+ * |    2-AB      |     4-CA      |    3-CB      |     4-CA     |   adc_c        |     cmp_c      |     ha       |
+ * |    3-CB      |     4-CA      |    5-BA      |     5-BA     |   adc_a        |     cmp_a      |     hc       |
+ * |    4-CA      |     0-BC      |    5-BA      |     0-BC     |   adc_b        |     cmp_b      |     hc       |
+ * |    5-BA      |     0-BC      |    1-AC      |     1-AC     |   adc_c        |     cmp_c      |     hb       |
  *
  */
 
@@ -188,9 +188,9 @@ Bldc::Bldc()
     la->set_mode(GpioIf::OUTPUT);
     lb->set_mode(GpioIf::OUTPUT);
     lc->set_mode(GpioIf::OUTPUT);
-    cmp_a = ComparatorIf::new_instance(PA5, PA2, PA6);
-    cmp_b = ComparatorIf::new_instance(PA1, PA2, PA6);
-    cmp_c = ComparatorIf::new_instance(PA0, PA2, PA6);
+    cmp_a = ComparatorIf::new_instance(PA5, PA2, PIN_NONE);
+    cmp_b = ComparatorIf::new_instance(PA1, PA2, PIN_NONE);
+    cmp_c = ComparatorIf::new_instance(PA0, PA2, PIN_NONE);
     adc_a = AdcIf::new_instance(PA5);
     adc_b = AdcIf::new_instance(PA1);
     adc_c = AdcIf::new_instance(PA0);
@@ -272,7 +272,7 @@ int Commutate(int step)
 {
     CommutateMap *com_mtx = &commutate_matrix[step];
 
-    if (erpm > MIN_VALID_ERPM) // commutate using 30 degree delay when erpm is over MIN_VALID_ERPM
+    if (demag != UINT32_MAX) // commutate using degree delay when bemf is valid
     {
         if (now < next_commutate_time)
             return -1;
@@ -280,7 +280,7 @@ int Commutate(int step)
     com_mtx->commutate();
     com_time = now;
     com_mtx->cmp->cmp_result();
-    com_mtx->adc->sample_value();
+    com_mtx->adc->sample_voltage(); // first call to enable channel
     return 0;
 }
 
@@ -296,9 +296,9 @@ int zero_cross_check(int current_step)
     uint32_t duty = pwm->duty();
     uint32_t cycle = pwm->cycle();
     uint32_t pos = pwm->pos();
-    uint32_t error = 2 * cycle / T; // make 2us error
+    uint32_t error = 2 * cycle / T; // make 1us error, based on the cmp's ouput delay along with the startup dutycycle and frequency
     bool stall = 0;
-    do
+    do  // software cmp blanking
     {
         if (pos + error > cycle)
         {
@@ -310,8 +310,8 @@ int zero_cross_check(int current_step)
         }
         else if (pos > duty + error)
         {                                                    // detect demagnatic time automatically
-            uint32_t tmp = com_mtx->adc->sample_value();     // costs about 1us
-            if (tmp > (uint32_t)(VALID_BEMF / 3.28f * 4095)) // check if the bemf is large enough
+            uint32_t tmp = com_mtx->adc->sample_voltage();     // costs about 1us
+            if (tmp > bemf_threshold) // check if the bemf is large enough
                 demag = pos;
         }
         else if (pos + error > duty)
@@ -395,7 +395,7 @@ uint32_t Bldc::get_rpm() const
 
 uint32_t Bldc::get_current() const
 {
-    return adc_cur->sample_voltage() * (current_gain * 1000);
+    return adc_cur->sample_voltage() * current_gain;
 }
 
 void Bldc::set_throttle(float v)

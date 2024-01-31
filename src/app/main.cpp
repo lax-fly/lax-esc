@@ -8,7 +8,7 @@ TimerIf *timer;
 UsartIf *debug_usart;
 Protocol *proto;
 MotorIf *motor;
-Sound* sound;
+Sound *sound;
 
 enum State
 {
@@ -37,23 +37,33 @@ void depackage(const Protocol::Package &package)
     case Protocol::SAVE_SETTING:
         break;
     case Protocol::THROTTLE:
-        if (package.value < 10)
+        if (IDLE == state && package.value < 10)
         {
             state = THROTTLE_DETECTED;
-            motor->stop();
+            motor->set_throttle(0);
             sound->throttle_signal_detected_tone();
         }
-        else if (THROTTLE_DETECTED == state && package.value < 50)
+        else if (THROTTLE_DETECTED == state)
         {
-            state = ARMED;
+            // state = ARMED;
             motor->arm(true);
-            sound->armed_tone();
+            // sound->armed_tone();
+            static bool flag = false;
+            if (flag)
+            {
+                flag = false;
+                motor->set_throttle(0);
+            }else
+            {
+                flag = true;
+                motor->set_throttle(0.05f);
+            }
         }
-        else if (ARMED == state)
-        {
-            float thorttle = (float)package.value / 2000;
-            motor->set_throttle(thorttle);
-        }
+        // else if (ARMED == state)
+        // {
+        //     float thorttle = (float)package.value / 2000;
+        //     motor->set_throttle(thorttle);
+        // }
         break;
 
     default:

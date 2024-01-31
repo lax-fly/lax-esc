@@ -21,12 +21,12 @@ ComparatorIf *ComparatorIf::new_instance(Pin pos_pin, Pin neg_pin, Pin out_pin)
     cmp_init_struct.cmp_inverting = CMP_INVERTING_PA2;
     cmp_init_struct.cmp_output = CMP_OUTPUT_NONE;
     cmp_init_struct.cmp_polarity = CMP_POL_NON_INVERTING;
-    cmp_init_struct.cmp_speed = CMP_SPEED_MEDIUM;
-    cmp_init_struct.cmp_hysteresis = CMP_HYSTERESIS_LOW;
+    cmp_init_struct.cmp_speed = CMP_SPEED_FAST;
+    cmp_init_struct.cmp_hysteresis = CMP_HYSTERESIS_NONE;
     cmp_init(CMP1_SELECTION, &cmp_init_struct);
     cmp_enable(CMP1_SELECTION, TRUE);
     cmp_scal_brg_config(CMP_SCAL_BRG_11);
-    cmp_filter_config(0x3F, 0x3F, TRUE);
+    cmp_filter_config(0x3f, 0x3f, TRUE);
     return cmp;
 }
 
