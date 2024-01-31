@@ -21,7 +21,7 @@ static uint32_t kv = 1400;              // rpm/v while empty load, used to judge
 static uint32_t blind_interval = 20000; // us
 static uint32_t startup_freq = 5000;    // Hz
 static Angle commutate_angle = ANGLE_30;
-static uint32_t bemf_threshold = 50;    // mV
+static uint32_t bemf_threshold = 50;  // mV
 static uint32_t max_pwm_freq = 50000; // Hz
 static uint32_t current_gain = 40;
 
@@ -209,16 +209,25 @@ Bldc::Bldc()
 #endif
 }
 
-void routine_1kHz(void *data)   // this determines pwm update frequency
+void routine_1kHz(void *data) // this determines pwm update frequency
 {
     if (throttle < min_throttle / 2) // throttle below min_throttle / 2 is treated as dead area
         pwm_dutycycle = 0;
     else if (throttle < min_throttle) // motor needs at least min_throttle throttle to startup
         pwm_dutycycle = min_throttle;
     else if (pwm_dutycycle < throttle)
-        pwm_dutycycle += 0.02f; // limit speed up rate
+    { /*
+      limit speed up rate, throttle 0->1 requires 100ms.
+      careful to grow this, the faster, the easier to stall.
+      I've tried 0.02, which is ok, but I use 0.01 for stability.
+      */
+        pwm_dutycycle += 0.01f;
+    }
     else
         pwm_dutycycle = throttle; // speeding down immediately is permitted
+
+    if (pwm_dutycycle > 1)
+        pwm_dutycycle = 1;
 
     // prevent motor from burning when stuck(or heavily loaded), the dutycycle will only cause motor to beep when stuck
     if (erpm < (uint32_t)(pwm_dutycycle * batery_voltage * kv) * polar_cnt / 2 / 4)
@@ -298,7 +307,7 @@ int zero_cross_check(int current_step)
     uint32_t pos = pwm->pos();
     uint32_t error = 2 * cycle / T; // make 1us error, based on the cmp's ouput delay along with the startup dutycycle and frequency
     bool stall = 0;
-    do  // software cmp blanking
+    do // software cmp blanking
     {
         if (pos + error > cycle)
         {
@@ -309,9 +318,9 @@ int zero_cross_check(int current_step)
             break;
         }
         else if (pos > duty + error)
-        {                                                    // detect demagnatic time automatically
-            uint32_t tmp = com_mtx->adc->sample_voltage();     // costs about 1us
-            if (tmp > bemf_threshold) // check if the bemf is large enough
+        {                                                  // detect demagnatic time automatically
+            uint32_t tmp = com_mtx->adc->sample_voltage(); // costs about 1us
+            if (tmp > bemf_threshold)                      // check if the bemf is large enough
                 demag = pos;
         }
         else if (pos + error > duty)
