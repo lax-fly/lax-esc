@@ -37,7 +37,7 @@ void depackage(const Protocol::Package &package)
     case Protocol::SAVE_SETTING:
         break;
     case Protocol::THROTTLE:
-        if (IDLE == state && package.value < 10)
+        if (IDLE == state)
         {
             state = THROTTLE_DETECTED;
             motor->set_throttle(0);
@@ -45,25 +45,15 @@ void depackage(const Protocol::Package &package)
         }
         else if (THROTTLE_DETECTED == state)
         {
-            // state = ARMED;
+            state = ARMED;
+            sound->armed_tone();
             motor->arm(true);
-            // sound->armed_tone();
-            static bool flag = false;
-            if (flag)
-            {
-                flag = false;
-                motor->set_throttle(0);
-            }else
-            {
-                flag = true;
-                motor->set_throttle(0.05f);
-            }
         }
-        // else if (ARMED == state)
-        // {
-        //     float thorttle = (float)package.value / 2000;
-        //     motor->set_throttle(thorttle);
-        // }
+        else if (ARMED == state)
+        {
+            float throttle = (float)package.value / 2000;
+            motor->set_throttle(throttle);
+        }
         break;
 
     default:
@@ -71,7 +61,7 @@ void depackage(const Protocol::Package &package)
     }
 }
 
-void print_rpm()
+void print_routine()
 {
     static uint32_t run_time = 0;
     if (run_time < timer->now_ms())
@@ -95,7 +85,6 @@ int main(void)
     {
         motor->poll();
         proto->poll();
-        sound->poll();
-        print_rpm();
+        print_routine();
     }
 }
