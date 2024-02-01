@@ -14,8 +14,8 @@ enum Angle
 
 /*********************** motor parameters *****************************/
 
-static float throttle = 0; // 0~1
-static float min_throttle = 0.05f;
+static float throttle = 0;              // 0~1
+static float min_throttle = 0.05f;      // for 3S. Grow it if motor won't startup with batery below 3S or bigger startup moment
 static uint32_t polar_cnt = 14;         // the polar count of the target motor
 static uint32_t kv = 1400;              // rpm/v while empty load, used to judge current load
 static uint32_t blind_interval = 20000; // us
@@ -23,7 +23,8 @@ static uint32_t startup_freq = 5000;    // Hz
 static Angle commutate_angle = ANGLE_30;
 static uint32_t bemf_threshold = 50;  // mV
 static uint32_t max_pwm_freq = 50000; // Hz
-static uint32_t current_gain = 40;
+static uint32_t current_gain = 40;    // the real current(mA) value divided by voltage(mV) from adc
+static uint32_t voltage_gain = 11;    // the read voltage value divided by voltage(mV) from adc
 
 /**********************************************************************/
 
@@ -64,7 +65,8 @@ static TimerIf *timer;
 static GpioIf *debug_pin;
 #endif
 
-static float batery_voltage = 12; // default 12v, will be updated when adc sampled the voltage
+static uint32_t batery_voltage = 12000; // default 12v, will be updated when adc sampled the voltage
+static uint32_t heavy_load_erpm = 0;    // erpm
 static uint32_t erpm = 0;
 static uint32_t pwm_freq = 0;
 static float pwm_dutycycle = 0;
@@ -72,12 +74,14 @@ static uint32_t demag = UINT32_MAX;
 static uint32_t speed_change_limit = 0;
 
 static uint64_t next_zero = 0;
-static uint64_t next_commutate_time;
+static uint64_t commutate_time;
 static uint32_t zero_interval;
 static uint64_t now;
 
 static char is_pwm_changed = 1;
 static bool is_armed = false;
+
+#define VOLTAGE_1S (4200) // mV
 
 void BC(void)
 {
@@ -177,7 +181,7 @@ Bldc::Bldc()
 {
     timer = TimerIf::singleton();
 #ifndef NDEBUG
-    debug_pin = GpioIf::new_instance(PA6);
+    debug_pin = GpioIf::new_instance(PA3);
 #endif
     ha = PwmIf::new_instance(PA10);
     hb = PwmIf::new_instance(PA9);
@@ -194,7 +198,7 @@ Bldc::Bldc()
     adc_a = AdcIf::new_instance(PA5);
     adc_b = AdcIf::new_instance(PA1);
     adc_c = AdcIf::new_instance(PA0);
-    adc_bat = AdcIf::new_instance(PA3);
+    adc_bat = AdcIf::new_instance(PA6);
     adc_cur = AdcIf::new_instance(PA4);
     commutate_matrix[0] = {BC, 2, 1, 2, cmp_a, adc_a, hb};
     commutate_matrix[1] = {AC, 2, 3, 3, cmp_b, adc_b, ha};
@@ -202,7 +206,9 @@ Bldc::Bldc()
     commutate_matrix[3] = {CB, 4, 5, 5, cmp_a, adc_a, hc};
     commutate_matrix[4] = {CA, 0, 5, 0, cmp_b, adc_b, hc};
     commutate_matrix[5] = {BA, 0, 1, 1, cmp_c, adc_c, hb};
-
+    batery_voltage = adc_bat->sample_voltage() * voltage_gain;
+    batery_voltage = batery_voltage < VOLTAGE_1S ? VOLTAGE_1S : batery_voltage;
+    heavy_load_erpm = batery_voltage * kv / 1000 * polar_cnt / 2 / 4;
     timer->timing_task_1ms(routine_1kHz, nullptr);
 #ifndef NDEBUG
     debug_pin->set_mode(GpioIf::OUTPUT);
@@ -230,7 +236,7 @@ void routine_1kHz(void *data) // this determines pwm update frequency
         pwm_dutycycle = 1;
 
     // prevent motor from burning when stuck(or heavily loaded), the dutycycle will only cause motor to beep when stuck
-    if (erpm < (uint32_t)(pwm_dutycycle * batery_voltage * kv) * polar_cnt / 2 / 4)
+    if (erpm < (uint32_t)(pwm_dutycycle * heavy_load_erpm))
         pwm_dutycycle = min_throttle;
 
     pwm_freq = startup_freq + erpm; // e.g. 1400kV motor using 3S -> max erpm = 117600
@@ -265,7 +271,7 @@ void update_state(void)
     if (i >= ARRAY_CNT(buf))
         i = 0;
 
-    next_commutate_time = now + (zero_interval >> commutate_angle);
+    commutate_time = now + (zero_interval >> commutate_angle);
     next_zero = now + zero_interval;
 
     if (zero_interval == blind_interval)
@@ -276,18 +282,16 @@ void update_state(void)
     speed_change_limit = zero_interval / 2 + zero_interval / 4;
 }
 
-volatile uint32_t com_time = 0; // the time when commutating happened
 int Commutate(int step)
 {
     CommutateMap *com_mtx = &commutate_matrix[step];
 
     if (demag != UINT32_MAX) // commutate using degree delay when bemf is valid
     {
-        if (now < next_commutate_time)
+        if (now < commutate_time)
             return -1;
     }
     com_mtx->commutate();
-    com_time = now;
     com_mtx->cmp->cmp_result();
     com_mtx->adc->sample_voltage(); // first call to enable channel
     return 0;
@@ -298,8 +302,6 @@ int zero_cross_check(int current_step)
     CommutateMap *com_mtx = &commutate_matrix[current_step];
 
     uint32_t T = 1000000 / pwm_freq;
-    if (now < com_time + T) // the first period after commutatation is invalid for the demagnetic time may make the bemf unusable
-        return 0;
 
     PwmIf *pwm = com_mtx->pwm;
     uint32_t duty = pwm->duty();
