@@ -37,9 +37,6 @@ LDSCRIPT := linker/$(MCU_FAMILY)_flash.ld
 ######################################
 # debug build?
 DEBUG ?= 1
-# optimization
-OPT = -Og
-
 
 #######################################
 # paths
@@ -125,9 +122,9 @@ ASFLAGS = $(MCU) $(AS_DEFS) $(AS_INCLUDES) $(OPT) -Wall -fdata-sections -ffuncti
 CFLAGS += $(MCU) $(C_DEFS) $(OPT) -Wall -fdata-sections -ffunction-sections
 
 ifeq ($(DEBUG), 1)
-CFLAGS += -g -gdwarf-2
+CFLAGS += -Og -g -gdwarf-2
 else
-CFLAGS += -DNDEBUG
+CFLAGS += -O3 -DNDEBUG
 endif
 
 # Generate dependency information
@@ -155,18 +152,18 @@ define get_include_dir
 		*msp*) INCLUDE_DIR="$(foreach i,$(MSP_LAYER_INCLUDE),-I$(i))";; \
 		*protocol*) INCLUDE_DIR="$(foreach i,$(PRO_LAYER_INCLUDE),-I$(i))";; \
 		*) echo "#######  error object: $(1) ########" ;; \
-	esac; echo -n $${INCLUDE_DIR} > $(BUILD_DIR)/include.tmp
+	esac; echo -n $${INCLUDE_DIR} > $(BUILD_DIR)/$(dir $(1))/$(notdir $(1)).inc
 endef
 
 $(BUILD_DIR)/%.o: src/%.c Makefile
 	$(call make_build_dir,$@)
-	$(call get_include_dir,$@)
-	$(CC) $(CFLAGS) `cat $(BUILD_DIR)/include.tmp` -c $< -o $@
+	$(call get_include_dir,$*)
+	$(CC) $(CFLAGS) `cat $(dir $@)/$(notdir $*).inc` -c $< -o $@
 
 $(BUILD_DIR)/%.o: src/%.cpp Makefile
 	$(call make_build_dir,$@)
-	$(call get_include_dir,$@)
-	$(CXX) $(CFLAGS) `cat $(BUILD_DIR)/include.tmp` -c $< -o $@
+	$(call get_include_dir,$*)
+	$(CXX) $(CFLAGS) `cat $(dir $@)/$(notdir $*).inc` -c $< -o $@
 	
 $(BUILD_DIR)/%.o: src/%.s Makefile
 	$(call make_build_dir,$@)

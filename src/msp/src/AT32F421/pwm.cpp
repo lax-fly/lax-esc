@@ -79,7 +79,7 @@ PwmIf *PwmIf::new_instance(Pin pin)
     tmr_primary_mode_select(timer, TMR_PRIMARY_SEL_RESET);
     tmr_overflow_request_source_set(timer, TRUE);
 
-    tmr_output_struct.oc_mode = TMR_OUTPUT_CONTROL_PWM_MODE_A;
+    tmr_output_struct.oc_mode = TMR_OUTPUT_CONTROL_FORCE_LOW;
     tmr_output_struct.oc_output_state = TRUE;
     tmr_output_struct.occ_output_state = FALSE;
     tmr_output_struct.oc_polarity = TMR_OUTPUT_ACTIVE_HIGH;

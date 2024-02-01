@@ -44,7 +44,7 @@ void Gpio::setup_af(Pin pin, AfMode mode, gpio_mux_sel_type function)
 {
     uint32_t pin_idx = GPIO2IDX(pin);
     gpio_type *regs = (gpio_type *)(GPIOA_BASE + 0x400 * GPIO2PORT(pin));
-    gpio_mode_type gpio_mode;
+    gpio_mode_type gpio_mode = GPIO_MODE_MUX;
     gpio_output_type gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
     gpio_pull_type gpio_pull = GPIO_PULL_NONE;
     gpio_drive_type gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
@@ -55,22 +55,17 @@ void Gpio::setup_af(Pin pin, AfMode mode, gpio_mux_sel_type function)
         gpio_mode = GPIO_MODE_ANALOG;
         break;
     case AF_INPUT_FT:
-        gpio_mode = GPIO_MODE_MUX;
         gpio_pull = GPIO_PULL_NONE;
     case AF_INPUT_PU:
-        gpio_mode = GPIO_MODE_MUX;
         gpio_pull = GPIO_PULL_UP;
         break;
     case AF_INPUT_PD:
-        gpio_mode = GPIO_MODE_MUX;
         gpio_pull = GPIO_PULL_DOWN;
         break;
     case AF_OUTPUT_PP:
-        gpio_mode = GPIO_MODE_MUX;
         gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
         break;
     case AF_OUTPUT_OD:
-        gpio_mode = GPIO_MODE_MUX;
         gpio_out_type = GPIO_OUTPUT_OPEN_DRAIN;
         break;
     default:
@@ -123,21 +118,18 @@ void Gpio::toggle()
 
 int Gpio::set_mode(IoMode mode)
 {
-    gpio_mode_type gpio_mode;
+    gpio_mode_type gpio_mode = GPIO_MODE_INPUT;
     gpio_output_type gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
     gpio_pull_type gpio_pull = GPIO_PULL_NONE;
     switch (mode)
     {
     case INPUT_FLOAT:
-        gpio_mode = GPIO_MODE_INPUT;
         gpio_pull = GPIO_PULL_NONE;
         break;
     case INPUT_PULLUP:
-        gpio_mode = GPIO_MODE_INPUT;
         gpio_pull = GPIO_PULL_UP;
         break;
     case INPUT_PULLDOWN:
-        gpio_mode = GPIO_MODE_INPUT;
         gpio_pull = GPIO_PULL_DOWN;
         break;
     case OUTPUT:
