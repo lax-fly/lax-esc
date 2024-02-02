@@ -55,12 +55,12 @@ void Serial::proccess(void)
             }
             else if (STR_CMP((char *)rx_buf, "beep ") == 0)
             {
-                package.cmd = THROTTLE;
+                package.cmd = BEEP;
                 p += 5;
             }
             else if (STR_CMP((char *)rx_buf, "dir ") == 0)
             {
-                package.cmd = THROTTLE;
+                package.cmd = DIR;
                 p += 4;
             }
             if (package.cmd != NONE)

@@ -67,7 +67,7 @@ void print_routine()
     if (run_time < timer->now_ms())
     {
         run_time = timer->now_ms() + 500;
-        printf("rpm: %lu cur:%lu\n", motor->get_rpm(), motor->get_current());
+        printf("rpm: %d cur:%lu\n", motor->get_rpm(), motor->get_current());
     }
 }
 

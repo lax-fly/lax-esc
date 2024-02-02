@@ -17,10 +17,9 @@ public:
         VOLUME_MID,
         VOLUME_HIGH,
     };
-    virtual uint32_t get_rpm() const = 0;
+    virtual int get_rpm() const = 0;            // the sign of return value represents the dir, negative means backward
     virtual uint32_t get_current() const = 0;   // return current consumption in mA
-    virtual void set_throttle(float v) = 0;
-    virtual int set_direction(int dir) = 0;   // return -1 means not supported
+    virtual void set_throttle(float v) = 0;     // suport negative throttle as backward spin direction, or just treat negative throttle as 0 if not supported
     virtual void arm(bool state) = 0;
     virtual void stop() = 0;
     virtual void beep(uint32_t freq, VolumeLevel volume) = 0;   // setting freq to 0 means beep off

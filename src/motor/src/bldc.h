@@ -6,7 +6,6 @@ typedef struct
     void (*commutate)(void);
     int step_fall;
     int step_rise;
-    int step_stall;
     ComparatorIf *cmp;
     AdcIf *adc;
     PwmIf *pwm;
@@ -18,10 +17,9 @@ private:
 
 public:
     Bldc();
-    virtual uint32_t get_rpm() const;
+    virtual int get_rpm() const;
     virtual uint32_t get_current() const;
     virtual void set_throttle(float v);
-    virtual int set_direction(int dir);
     virtual void arm(bool state);
     virtual void stop();
     virtual void beep(uint32_t freq, VolumeLevel volume);

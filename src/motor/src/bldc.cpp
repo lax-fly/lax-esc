@@ -3,13 +3,15 @@
 #include "bldc.h"
 #include <assert.h>
 #include <stdio.h>
+#include <utility>
 
 enum Angle
 {
-    ANGLE_3_75 = 4, // degree 3.75
-    ANGLE_7_5 = 3,  // degree 7.5
-    ANGLE_15 = 2,   // degree 15
-    ANGLE_30 = 1,   // degree 30
+    ANGLE_1_875 = 5, // degree 1.875
+    ANGLE_3_75 = 4,  // degree 3.75
+    ANGLE_7_5 = 3,   // degree 7.5
+    ANGLE_15 = 2,    // degree 15
+    ANGLE_30 = 1,    // degree 30
 };
 
 /*********************** motor parameters *****************************/
@@ -23,7 +25,7 @@ static uint32_t startup_freq = 5000;    // Hz
 static Angle commutate_angle = ANGLE_30;
 static uint32_t bemf_threshold = 50;  // mV
 static uint32_t max_pwm_freq = 50000; // Hz
-static uint32_t current_gain = 40;    // the real current(mA) value divided by voltage(mV) from adc
+static uint32_t current_gain = 5;     // the real current(mA) value divided by voltage(mV) from adc
 static uint32_t voltage_gain = 11;    // the read voltage value divided by voltage(mV) from adc
 
 /**********************************************************************/
@@ -72,6 +74,7 @@ static uint32_t pwm_freq = 0;
 static float pwm_dutycycle = 0;
 static uint32_t demag = UINT32_MAX;
 static uint32_t speed_change_limit = 0;
+static int spin_direction = 0; // 1: forward -1: backward
 
 static uint64_t next_zero = 0;
 static uint64_t commutate_time;
@@ -80,6 +83,7 @@ static uint64_t now;
 
 static char is_pwm_changed = 1;
 static bool is_armed = false;
+static bool braking = false;
 
 #define VOLTAGE_1S (4200) // mV
 
@@ -163,18 +167,17 @@ void set_frequency(uint32_t pwm_freq)
  * the first column indicates which phases are being powered, BC means the phase B is connected to the vbat, and the phase C to the GND
  * the 'next step' column indicates the next step to be powered when falling edge is detected by adc, -1 means falling edge while 1 meas rising.
  *
- * |              | next step at  | next step at | next step at | which adc used | which cmp used | which pwm is |
- * | current step | falling edge  | rising edge  | stalling     | by float pin   | by float pin   | being used   |
- * |--------------|-------------- |--------------|--------------|----------------|----------------|--------------|
- * |    0-BC      |     2-AB      |    1-AC      |     2-AB     |   adc_a        |     cmp_a      |     hb       |
- * |    1-AC      |     2-AB      |    3-CB      |     3-CB     |   adc_b        |     cmp_b      |     ha       |
- * |    2-AB      |     4-CA      |    3-CB      |     4-CA     |   adc_c        |     cmp_c      |     ha       |
- * |    3-CB      |     4-CA      |    5-BA      |     5-BA     |   adc_a        |     cmp_a      |     hc       |
- * |    4-CA      |     0-BC      |    5-BA      |     0-BC     |   adc_b        |     cmp_b      |     hc       |
- * |    5-BA      |     0-BC      |    1-AC      |     1-AC     |   adc_c        |     cmp_c      |     hb       |
+ * |              | next step at  | next step at | which adc used | which cmp used | which pwm is |
+ * | current step | falling edge  | rising edge  | by float pin   | by float pin   | being used   |
+ * |--------------|-------------- |--------------|----------------|----------------|--------------|
+ * |    0-BC      |     2-AB      |    1-AC      |   adc_a        |     cmp_a      |     hb       |
+ * |    1-AC      |     2-AB      |    3-CB      |   adc_b        |     cmp_b      |     ha       |
+ * |    2-AB      |     4-CA      |    3-CB      |   adc_c        |     cmp_c      |     ha       |
+ * |    3-CB      |     4-CA      |    5-BA      |   adc_a        |     cmp_a      |     hc       |
+ * |    4-CA      |     0-BC      |    5-BA      |   adc_b        |     cmp_b      |     hc       |
+ * |    5-BA      |     0-BC      |    1-AC      |   adc_c        |     cmp_c      |     hb       |
  *
  */
-
 static CommutateMap commutate_matrix[6] = {0};
 
 Bldc::Bldc()
@@ -200,12 +203,7 @@ Bldc::Bldc()
     adc_c = AdcIf::new_instance(PA0);
     adc_bat = AdcIf::new_instance(PA6);
     adc_cur = AdcIf::new_instance(PA4);
-    commutate_matrix[0] = {BC, 2, 1, 2, cmp_a, adc_a, hb};
-    commutate_matrix[1] = {AC, 2, 3, 3, cmp_b, adc_b, ha};
-    commutate_matrix[2] = {AB, 4, 3, 4, cmp_c, adc_c, ha};
-    commutate_matrix[3] = {CB, 4, 5, 5, cmp_a, adc_a, hc};
-    commutate_matrix[4] = {CA, 0, 5, 0, cmp_b, adc_b, hc};
-    commutate_matrix[5] = {BA, 0, 1, 1, cmp_c, adc_c, hb};
+    set_throttle(0);
     batery_voltage = adc_bat->sample_voltage() * voltage_gain;
     batery_voltage = batery_voltage < VOLTAGE_1S ? VOLTAGE_1S : batery_voltage;
     heavy_load_erpm = batery_voltage * kv / 1000 * polar_cnt / 2 / 4;
@@ -239,12 +237,20 @@ void routine_1kHz(void *data) // this determines pwm update frequency
     if (erpm < (uint32_t)(pwm_dutycycle * heavy_load_erpm))
         pwm_dutycycle = min_throttle;
 
+    if (braking)
+    {
+        pwm_dutycycle = 0;
+        if (erpm < min_throttle * heavy_load_erpm * 2) // braking util motor is slow enough
+            braking = false;
+    }
+
+    if (!is_armed)
+        pwm_dutycycle = 0;
+
     pwm_freq = startup_freq + erpm; // e.g. 1400kV motor using 3S -> max erpm = 117600
     if (pwm_freq > max_pwm_freq)    // limit the max pwm freqence
         pwm_freq = max_pwm_freq;
 
-    if (!is_armed)
-        pwm_dutycycle = 0;
     is_pwm_changed = 1;
 }
 
@@ -274,7 +280,7 @@ void update_state(void)
     commutate_time = now + (zero_interval >> commutate_angle);
     next_zero = now + zero_interval;
 
-    if (zero_interval == blind_interval)
+    if (intval == blind_interval)
         erpm = 0;
     else
         erpm = 60 * 1000000 / 6 / zero_interval;
@@ -399,9 +405,12 @@ void power_down(void)
     lc->unset();
 }
 
-uint32_t Bldc::get_rpm() const
+int Bldc::get_rpm() const
 {
+    if (spin_direction >= 0)
     return erpm * 2 / polar_cnt;
+    else
+    return -(erpm * 2 / polar_cnt);
 }
 
 uint32_t Bldc::get_current() const
@@ -411,7 +420,45 @@ uint32_t Bldc::get_current() const
 
 void Bldc::set_throttle(float v)
 {
-    throttle = v;
+    bool dir_changed = false;
+    if (v >= 0)
+    {
+        if (spin_direction <= 0)
+            dir_changed = true;
+        spin_direction = 1;
+        throttle = v;
+    }
+    else
+    {
+        if (spin_direction > 0)
+            dir_changed = true;
+        spin_direction = -1;
+        throttle = -v;
+    }
+
+    if (!dir_changed)
+        return;
+
+    stop();
+    // swap any two phase to change the spin direction
+    if (spin_direction > 0)
+    {
+        commutate_matrix[0] = {BC, 2, 1, cmp_a, adc_a, hb};
+        commutate_matrix[1] = {AC, 2, 3, cmp_b, adc_b, ha};
+        commutate_matrix[2] = {AB, 4, 3, cmp_c, adc_c, ha};
+        commutate_matrix[3] = {CB, 4, 5, cmp_a, adc_a, hc};
+        commutate_matrix[4] = {CA, 0, 5, cmp_b, adc_b, hc};
+        commutate_matrix[5] = {BA, 0, 1, cmp_c, adc_c, hb};
+    }
+    else if (spin_direction < 0)
+    {
+        commutate_matrix[0] = {CB, 2, 1, cmp_a, adc_a, hc};
+        commutate_matrix[1] = {AB, 2, 3, cmp_c, adc_c, ha};
+        commutate_matrix[2] = {AC, 4, 3, cmp_b, adc_b, ha};
+        commutate_matrix[3] = {BC, 4, 5, cmp_a, adc_a, hb};
+        commutate_matrix[4] = {BA, 0, 5, cmp_c, adc_c, hb};
+        commutate_matrix[5] = {CA, 0, 1, cmp_b, adc_b, hc};
+    }
 }
 
 void Bldc::arm(bool state)
@@ -421,36 +468,31 @@ void Bldc::arm(bool state)
 
 void Bldc::stop()
 {
+    pwm_dutycycle = 0;
+    pwm_freq = startup_freq;
     ha->disable();
     la->set();
     hb->disable();
     lb->set();
     hc->disable();
     lc->set();
-    is_armed = false;
-    erpm = 0;
-}
-
-int Bldc::set_direction(int dir)
-{
-    return -1; // not support yet
+    braking = true;
 }
 
 void Bldc::poll()
 {
-    if (!is_armed)
-        return;
     now = timer->now_us();
 
     static int step = 0;
     static int edge = 0;
+
     if (is_pwm_changed)
     {
         set_dutycycle(pwm_dutycycle); // changing dutycycle or frequency must be synchronous with the commutation for stablization
         set_frequency(pwm_freq);
         is_pwm_changed = 0;
     }
-    if (edge)
+    if (!braking && edge)
     {
         if (Commutate(step) == 0)
         {
