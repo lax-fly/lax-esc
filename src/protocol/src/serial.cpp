@@ -7,17 +7,15 @@ extern UsartIf *debug_usart;
 Serial::Serial() : callback(nullptr), run_time(0)
 {
     timer = TimerIf::singleton();
-    PwmIf *pwm = PwmIf::new_instance(PB4);
     crc = CrcIf::singleton();
     crc->set_start(0xFF);
     crc->set_poly(0xB7);
+    run_time = 0;
     restart();
 }
 
 Serial::~Serial()
 {
-    if (pwm)
-        delete pwm;
 }
 
 void Serial::set_package_callback(Protocol::CallBack callback)
@@ -71,6 +69,8 @@ void Serial::proccess(void)
                 restart();
             }
         }
+        else if (process_idx == sizeof(rx_buf) / sizeof(rx_buf[0]))
+            restart();
     }
     // switch (state)
     // {
@@ -137,6 +137,10 @@ void Serial::proccess(void)
     // default:
     //     break;
     // }
+}
+
+void Serial::send_package(const Protocol::Package& pakcage)
+{
 }
 
 void Serial::poll(void)

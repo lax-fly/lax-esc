@@ -45,23 +45,23 @@ class PwmIf
 public:
     enum Mode
     {
-        INPUT,  // to recieve pwm input
-        OUTPUT, // to output pwm
-        DIGITAL,
+        INPUT = 1,  // to recieve pwm input
+        OUTPUT = 2, // to output pwm
+        SERIAL = 4, // enable serial functions like serial_write, read_digital
     };
     virtual ~PwmIf() {}
     virtual void set_dutycycle(float dutycycle) = 0; // 0.0~1.0
     virtual void set_freq(uint32_t freq) = 0;
     virtual void enable() = 0;
     virtual void disable() = 0;
-    virtual uint32_t duty() const = 0;  // return the pwm duty length
-    virtual uint32_t cycle() const = 0; // return the pwm cycle length
-    virtual uint32_t pos() const = 0;   // return the current pwm output position in the cycle
+    virtual uint32_t get_duty() const = 0;  // return the pwm duty length
+    virtual uint32_t get_cycle() const = 0; // return the pwm cycle length
+    virtual uint32_t get_pos() const = 0;   // return the current pwm output position in the cycle
     /**
      * @brief set the pwm mode, a pwm object is default OUTPUT mode once created
-     * when DIGITAL is set, serial_write and read_digital functions can now be used.
-     * before using serial_write, call set_mode(OUTPUT) after set_mode(DIGITAL)
-     * before using read_digital, call set_mode(INPUT) after set_mode(DIGITAL)
+     * when SERIAL is set, serial_write and read_digital functions can now be used.
+     * before using serial_write, call set_mode(OUTPUT) after set_mode(SERIAL)
+     * before using read_digital, call set_mode(INPUT) after set_mode(SERIAL)
      */
     virtual void set_mode(Mode mode) = 0;
     /**
@@ -69,8 +69,8 @@ public:
      * if last write is finished, return 0, or return -1
      *  @param pulses will be copied internally
      */
-    virtual int serial_write(const uint32_t *pulses, uint32_t sz) = 0; // async
-    virtual void read_digital(uint8_t *data, uint32_t sz) = 0;         // async
+    virtual int serial_write(const uint32_t *pulses = nullptr, uint32_t sz = 0) = 0; // async
+    virtual int serial_read(uint32_t *data = nullptr, uint32_t sz = 0) = 0;          // async
     static PwmIf *new_instance(Pin pin);
 };
 
@@ -109,7 +109,7 @@ class AdcIf
 {
 public:
     virtual ~AdcIf() {}
-    virtual uint32_t sample_voltage(void) const = 0;   // in mV, // the implementing code must be done in 2us, which means the sample rate should be higher than 500kHz
+    virtual uint32_t sample_voltage(void) const = 0; // in mV, // the implementing code must be done in 2us, which means the sample rate should be higher than 500kHz
     static AdcIf *new_instance(Pin pin);
 };
 

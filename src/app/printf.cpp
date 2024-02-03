@@ -1,8 +1,11 @@
 #include "string.h"
 #include "assert.h"
 #include "msp.h"
+#include "motor.h"
 
-extern UsartIf* debug_usart;
+extern UsartIf *debug_usart;
+extern MotorIf *motor;
+extern TimerIf *timer;
 
 extern "C"
 {
@@ -47,18 +50,28 @@ extern "C"
     }
     int _read(int file, char *ptr, int len)
     {
-        return debug_usart->async_recv((uint8_t *)ptr, len);
-        return 0;
+        if (debug_usart)
+            return debug_usart->async_recv((uint8_t *)ptr, len);
+        else
+            return 0;
     }
     int _write(int file, char *ptr, int len)
     {
-        debug_usart->async_send((uint8_t *)ptr, len);
+        if (debug_usart)
+            debug_usart->async_send((uint8_t *)ptr, len);
         return len;
     }
     void abort(void)
     {
+        if (motor)
+            motor->set_throttle(0); // avoid motor burning in case motor is running at high dutycycle when dead exception happens
         /* Abort called */
         while (1)
-            ;
+        {
+            if (timer)
+                timer->delay_ms(1000);
+            if (debug_usart)
+                debug_usart->sync_send((const uint8_t *)"exception happened\n", 19);
+        }
     }
 }

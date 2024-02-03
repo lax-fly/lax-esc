@@ -7,6 +7,7 @@
             ],
             "defines": [
                 "AT32F421G8U7",
+                "at32f421_v1_0",
                 "USE_STDPERIPH_DRIVER"
             ],
             "compilerPath": "D:/develop/gcc-arm/bin/arm-none-eabi-g++.exe",

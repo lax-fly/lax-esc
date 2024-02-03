@@ -1,311 +1,271 @@
-// /*
-//  * dshot.c
-//  *
-//  *  Created on: Apr. 22, 2020
-//  *      Author: Alka
-//  */
+#include "dshot.h"
+#include "board.h"
 
-// #include "functions.h"
-// #include "dshot.h"
-// #include "targets.h"
-// #include "common.h"
-// #include "sounds.h"
+#include <stdio.h>
+#include <assert.h>
 
-// int dpulse[16] = {0};
+Dshot::Dshot()
+{
+    timer = TimerIf::singleton();
+    // GpioIf *io = GpioIf::new_instance(PA9);
+    pwm = PwmIf::new_instance(SIGNAL_IN_PIN);
+    pwm->set_mode(PwmIf::SERIAL);
+    pwm->set_mode(PwmIf::INPUT);
+    run_time = 0;
+    callback = nullptr;
+    state = RECEIVE;
+    resp_time = 0;
+    restart();
+}
 
-// const char gcr_encode_table[16] =
-// 	{
-// 		0b11001,
-// 		0b11011,
-// 		0b10010,
-// 		0b10011,
-// 		0b11101,
-// 		0b10101,
-// 		0b10110,
-// 		0b10111,
-// 		0b11010,
-// 		0b01001,
-// 		0b01010,
-// 		0b01011,
-// 		0b11110,
-// 		0b01101,
-// 		0b01110,
-// 		0b01111};
+Dshot::~Dshot()
+{
+    if (pwm)
+        delete pwm;
+}
 
-// char EDT_ARM_ENABLE = 0;
-// char EDT_ARMED = 0;
-// int shift_amount = 0;
-// uint32_t gcrnumber;
-// extern int e_com_time;
-// extern int zero_crosses;
-// extern char send_telemetry;
-// extern int smoothedinput;
-// extern uint8_t max_duty_cycle_change;
-// int dshot_full_number;
-// extern char play_tone_flag;
-// uint8_t command_count = 0;
-// uint8_t last_command = 0;
-// uint8_t high_pin_count = 0;
-// uint32_t gcr[37] = {0};
-// uint16_t dshot_frametime;
-// uint16_t dshot_goodcounts;
-// uint16_t dshot_badcounts;
-// char dshot_extended_telemetry = 0;
-// uint16_t send_extended_dshot = 0;
+void Dshot::restart(void)
+{
+    period = 0;
+    package.cmd = NONE;
+    dshot_bit = rd_sz = 0;
+    if (state == RECEIVE)
+        pwm->serial_read(rx_buf, sizeof(rx_buf) / sizeof(rx_buf[0]));
+}
 
-// void computeDshotDMA()
-// {
+void Dshot::proccess(void)
+{
+    if (rd_sz < 31) // it won't rise at the end of the last pulse
+        return;
 
-// 	int j = 0;
-// 	dshot_frametime = dma_buffer[31] - dma_buffer[0];
+    resp_time = now_us + 25; // 30us, 5us for error
 
-// #if defined(MCU_F051) || defined(MCU_F031)
-// 	if ((dshot_frametime < 1350) && (dshot_frametime > 1150))
-// 	{
-// 		for (int i = 0; i < 16; i++)
-// 		{
-// 			dpulse[i] = ((dma_buffer[j + (i << 1) + 1] - dma_buffer[j + (i << 1)]) >> 5);
-// 		}
-// #endif
-// #if defined(MCU_G071) || defined(MCU_GD32)
-// 		if ((dshot_frametime < 1690) && (dshot_frametime > 1600))
-// 		{
-// 			for (int i = 0; i < 16; i++)
-// 			{
-// 				dpulse[i] = ((dma_buffer[j + (i << 1) + 1] - dma_buffer[j + (i << 1)]) >> 6);
-// 			}
-// #endif
-// #if defined(MCU_L431)
-// 			if ((dshot_frametime < 350) && (dshot_frametime > 200))
-// 			{
-// 				for (int i = 0; i < 16; i++)
-// 				{
-// 					dpulse[i] = ((dma_buffer[j + (i << 1) + 1] - dma_buffer[j + (i << 1)]) >> 3);
-// 				}
-// #endif
+    for (uint32_t i = 0; i < 15; i++)
+    {
+        register uint32_t high = rx_buf[i * 2];
+        register uint32_t low = rx_buf[(i * 2) + 1];
+        period += high + low;
+        if (high > low)
+            dshot_bit |= 0x8000 >> i;
+    }
+    period /= 15;
+    uint32_t pulse = rx_buf[30];
+    if (pulse > period / 2) // deal with the last bit
+        dshot_bit |= 1;
+    uint32_t crc_sum = dshot_bit;
+    crc_sum ^= crc_sum >> 8;
+    crc_sum ^= crc_sum >> 4;
+    if ((crc_sum & 0x0f) == 0)
+    {
+        package.telemetry = !!(dshot_bit & (1 << 4));
+        int value = (int)dshot_bit >> 5;
+        if (value > 47)
+        {
+            package.cmd = LOCKED; // THROTTLE;
+            package.value = value - 47;
+        }
+        else if (value == 0)
+        {
+            package.cmd = LOCKED;
+            package.value = 0;
+        }
+        else if (value < 6)
+        {
+            package.cmd = BEEP;
+            package.value = value;
+        }
+        else if (value == 6)
+        {
+            package.cmd = VERSION;
+            package.value = 1;
+        }
+        else if (value == 7)
+        {
+            package.cmd = DIR;
+            package.value = -1;
+        }
+        else if (value == 8)
+        {
+            package.cmd = DIR;
+            package.value = 1;
+        }
+        else if (value == 9)
+        {
+            package.cmd = MODE_3D;
+            package.value = 0;
+        }
+        else if (value == 10)
+        {
+            package.cmd = MODE_3D;
+            package.value = 1;
+        }
+        else if (value == 11)
+        {
+            package.cmd = SETTING;
+            package.value = value;
+        }
+        else if (value == 12)
+        {
+            package.cmd = SAVE_SETTING;
+            package.value = value;
+        }
+        if (callback)
+            callback(package);
+    }
+    restart();
+}
 
-// 				uint8_t calcCRC = ((dpulse[0] ^ dpulse[4] ^ dpulse[8]) << 3 | (dpulse[1] ^ dpulse[5] ^ dpulse[9]) << 2 | (dpulse[2] ^ dpulse[6] ^ dpulse[10]) << 1 | (dpulse[3] ^ dpulse[7] ^ dpulse[11]));
-// 				uint8_t checkCRC = (dpulse[12] << 3 | dpulse[13] << 2 | dpulse[14] << 1 | dpulse[15]);
+void Dshot::set_package_callback(CallBack callback)
+{
+    this->callback = callback;
+}
 
-// 				if (!armed)
-// 				{
-// 					if (dshot_telemetry == 0)
-// 					{
-// 						if (INPUT_PIN_PORT->IDR & INPUT_PIN)
-// 						{ // if the pin is high for 100 checks between signal pulses its inverted
-// 							high_pin_count++;
-// 							if (high_pin_count > 100)
-// 							{
-// 								dshot_telemetry = 1;
-// 							}
-// 						}
-// 					}
-// 				}
-// 				if (dshot_telemetry)
-// 				{
-// 					checkCRC = ~checkCRC + 16;
-// 				}
+const char gcr_table[16] = {
+    0b11001,
+    0b11011,
+    0b10010,
+    0b10011,
+    0b11101,
+    0b10101,
+    0b10110,
+    0b10111,
+    0b11010,
+    0b01001,
+    0b01010,
+    0b01011,
+    0b11110,
+    0b01101,
+    0b01110,
+    0b01111};
 
-// 				int tocheck = (dpulse[0] << 10 | dpulse[1] << 9 | dpulse[2] << 8 | dpulse[3] << 7 | dpulse[4] << 6 | dpulse[5] << 5 | dpulse[6] << 4 | dpulse[7] << 3 | dpulse[8] << 2 | dpulse[9] << 1 | dpulse[10]);
+uint32_t Dshot::encode2dshot_bits(uint32_t data)
+{
+    uint32_t crc_sum = data & 0xf;
+    crc_sum ^= (data & 0xf0) >> 4;
+    crc_sum ^= (data & 0xf00) >> 8;
+    crc_sum = ~crc_sum & 0xf;
+    data = (data << 4) | crc_sum;
+    uint32_t encode_data = gcr_table[data & 0xf];
+    encode_data |= gcr_table[(data & 0xf0) >> 4] << 5;
+    encode_data |= gcr_table[(data & 0xf00) >> 8] << 10;
+    encode_data |= gcr_table[(data & 0xf000) >> 12] << 15;
+    uint32_t dshot_bits = 0;
+    encode_data <<= (32 - 20);
+    for (uint32_t i = 0; i < 20; i++)
+    {
+        if (encode_data & 0x80000000)
+        {
+            dshot_bits = (dshot_bits << 1) + ((dshot_bits & 0x01) ^ 0x1);
+        }
+        else
+        {
+            dshot_bits = (dshot_bits << 1) + (dshot_bits & 0x01);
+        }
+        encode_data <<= 1;
+    }
+    return dshot_bits;
+}
 
-// 				if (calcCRC == checkCRC)
-// 				{
-// 					signaltimeout = 0;
-// 					dshot_goodcounts++;
-// 					if (dpulse[11] == 1)
-// 					{
-// 						send_telemetry = 1;
-// 					}
-// 					if (tocheck > 47)
-// 					{
-// 						if (EDT_ARMED)
-// 						{
-// 							newinput = tocheck;
-// 							dshotcommand = 0;
-// 							command_count = 0;
-// 							return;
-// 						}
-// 					}
+void Dshot::send_package(const Protocol::Package &pakcage)
+{
+    state = TO_SEND;
+    pwm->set_mode(PwmIf::OUTPUT);
 
-// 					if ((tocheck <= 47) && (tocheck > 0))
-// 					{
-// 						newinput = 0;
-// 						dshotcommand = tocheck; //  todo
-// 					}
-// 					if (tocheck == 0)
-// 					{
-// 						if (EDT_ARM_ENABLE == 1)
-// 						{
-// 							EDT_ARMED = 0;
-// 						}
-// 						newinput = 0;
-// 						dshotcommand = 0;
-// 						command_count = 0;
-// 					}
+    uint32_t data = 0;
+    switch (pakcage.cmd)
+    {
+    case Protocol::STATE_EVENT:
+        data = 0xE00;
+        break;
+    case Protocol::ERPM:
+    {
+        // format e e e m m m m m m m m m,  erpm = M << E
+        data = package.value;
+        uint32_t E = 0;
+        while (data > ((1 << 9) - 1))
+        {
+            data >>= 1;
+            E++;
+        }
+        data = (E << 9) + data;
+        break;
+    }
+    case Protocol::TEMPERATURE:
+        data = 0x200 | package.value; // step 1℃
+        break;
+    case Protocol::VOLTAGE:
+        data = 0x400 | (package.value / 4); // step 0.25v, value in mV
+        break;
+    case Protocol::CURRENT:
+        data = 0x600 | (package.value / 1000); // step 1A, value in mA
+        break;
 
-// 					if ((dshotcommand > 0) && (running == 0) && armed)
-// 					{
-// 						if (dshotcommand != last_command)
-// 						{
-// 							last_command = dshotcommand;
-// 							command_count = 0;
-// 						}
-// 						if (dshotcommand < 5)
-// 						{					   // beacons
-// 							command_count = 6; // go on right away
-// 						}
-// 						command_count++;
-// 						if (command_count >= 6)
-// 						{
-// 							command_count = 0;
-// 							switch (dshotcommand)
-// 							{ // todo
+    default:
+        assert(false);
+        break;
+    }
 
-// 							case 1:
-// 								playInputTune();
-// 								break;
-// 							case 2:
-// 								playInputTune2();
-// 								break;
-// 							case 3:
-// 								playBeaconTune3();
-// 								break;
-// 							case 5:
-// 								playStartupTune();
-// 								break;
-// 							case 7:
-// 								dir_reversed = 0;
-// 								forward = 1 - dir_reversed;
-// 								play_tone_flag = 1;
-// 								break;
-// 							case 8:
-// 								dir_reversed = 1;
-// 								forward = 1 - dir_reversed;
-// 								play_tone_flag = 2;
-// 								break;
-// 							case 9:
-// 								bi_direction = 0;
-// 								break;
-// 							case 10:
-// 								bi_direction = 1;
-// 								break;
-// 							case 12:
-// 								saveEEpromSettings();
-// 								// delayMillis(100);
-// 								//	NVIC_SystemReset();
-// 								break;
-// 							case 13:
-// 								dshot_extended_telemetry = 1;
-// 								send_extended_dshot = 0b111000000000;
-// 								if (EDT_ARM_ENABLE == 1)
-// 								{
-// 									EDT_ARMED = 1;
-// 								}
-// 								break;
-// 							case 14:
-// 								dshot_extended_telemetry = 0;
-// 								send_extended_dshot = 0b111011111111;
-// 								//	make_dshot_package();
-// 								break;
-// 							case 20:
-// 								forward = 1 - dir_reversed;
-// 								break;
-// 							case 21:
-// 								forward = dir_reversed;
-// 								break;
-// 							}
-// 							last_dshot_command = dshotcommand;
-// 							dshotcommand = 0;
-// 						}
-// 					}
-// 				}
-// 				else
-// 				{
-// 					dshot_badcounts++;
-// 				}
-// 			}
-// 		}
+    data = encode2dshot_bits(data);
 
-// 		void make_dshot_package()
-// 		{
-// 			if (send_extended_dshot > 0)
-// 			{
-// 				dshot_full_number = send_extended_dshot;
-// 				send_extended_dshot = 0;
-// 			}
-// 			else
-// 			{
-// 				if (!running)
-// 				{
-// 					e_com_time = 65535;
-// 				}
-// 				//	calculate shift amount for data in format eee mmm mmm mmm, first 1 found in first seven bits of data determines shift amount
-// 				// this allows for a range of up to 65408 microseconds which would be shifted 0b111 (eee) or 7 times.
-// 				for (int i = 15; i >= 9; i--)
-// 				{
-// 					if (e_com_time >> i == 1)
-// 					{
-// 						shift_amount = i + 1 - 9;
-// 						break;
-// 					}
-// 					else
-// 					{
-// 						shift_amount = 0;
-// 					}
-// 				}
-// 				// shift the commutation time to allow for expanded range and put shift amount in first three bits
-// 				dshot_full_number = ((shift_amount << 9) | (e_com_time >> shift_amount));
-// 			}
-// 			// calculate checksum
-// 			uint16_t csum = 0;
-// 			uint16_t csum_data = dshot_full_number;
-// 			for (int i = 0; i < 3; i++)
-// 			{
-// 				csum ^= csum_data; // xor data by nibbles
-// 				csum_data >>= 4;
-// 			}
-// 			csum = ~csum; // invert it
-// 			csum &= 0xf;
+    data <<= 32 - 21;
+    if (!period)
+        period = 1667; // 600kHz
+    uint32_t period_54 = period * 4 / 5;
+    pwm->set_freq(1000000000 / period_54);
+    uint32_t pulse0 = period_54 / 4;
+    uint32_t pulse1 = pulse0 + period_54 / 2;
+    for (uint32_t i = 0; i < 21; i++)
+    { // msb first
+        if (data & 0x80000000)
+            tx_buf[i] = pulse1;
+        else
+            tx_buf[i] = pulse0;
+        data <<= 1;
+    }
+}
 
-// 			dshot_full_number = (dshot_full_number << 4) | csum; // put checksum at the end of 12 bit dshot number
+void Dshot::receive_dealing()
+{
+    proccess(); // one byte once to avoid long time cpu occupation
+    int rd_sz = pwm->serial_read();
+    if (rd_sz == 0)
+        return;
+    if (rd_sz == this->rd_sz)
+    { // no byte received over 20us, so restart frame
+        restart();
+        return;
+    }
+    this->rd_sz = rd_sz;
+}
 
-// 			// GCR RLL encode 16 to 20 bit
+void Dshot::send_dealing()
+{
+    if (now_us < resp_time)
+        return;
 
-// 			gcrnumber = gcr_encode_table[(dshot_full_number >> 12)] << 15					  // first set of four digits
-// 						| gcr_encode_table[(((1 << 4) - 1) & (dshot_full_number >> 8))] << 10 // 2nd set of 4 digits
-// 						| gcr_encode_table[(((1 << 4) - 1) & (dshot_full_number >> 4))] << 5  // 3rd set of four digits
-// 						| gcr_encode_table[(((1 << 4) - 1) & (dshot_full_number >> 0))];	  // last four digits
-// // GCR RLL encode 20 to 21bit output
-// #if defined(MCU_F051) || defined(MCU_F031)
-// 			gcr[1 + buffer_padding] = 64;
-// 			for (int i = 19; i >= 0; i--)
-// 			{																												   // each digit in gcrnumber
-// 				gcr[buffer_padding + 20 - i + 1] = ((((gcrnumber & 1 << i)) >> i) ^ (gcr[buffer_padding + 20 - i] >> 6)) << 6; // exclusive ored with number before it multiplied by 64 to match output timer.
-// 			}
-// 			gcr[buffer_padding] = 0;
-// #endif
-// #ifdef MCU_G071
-// 			gcr[1 + 7] = 94;
-// 			for (int i = 19; i >= 0; i--)
-// 			{																						 // each digit in gcrnumber
-// 				gcr[7 + 20 - i + 1] = ((((gcrnumber & 1 << i)) >> i) ^ (gcr[7 + 20 - i] >> 6)) * 94; // exclusive ored with number before it multiplied by 64 to match output timer.
-// 			}
-// 			gcr[7] = 0;
-// #endif
-// #ifdef MCU_GD32
-// 			gcr[1 + 7] = 84;
-// 			for (int i = 19; i >= 0; i--)
-// 			{																						 // each digit in gcrnumber
-// 				gcr[7 + 20 - i + 1] = ((((gcrnumber & 1 << i)) >> i) ^ (gcr[7 + 20 - i] >> 6)) * 84; // exclusive ored with number before it multiplied by 64 to match output timer.
-// 			}
-// 			gcr[7] = 0;
-// #endif
-// #ifdef MCU_L431
-// 			gcr[1 + 7] = 118;
-// 			for (int i = 19; i >= 0; i--)
-// 			{																						  // each digit in gcrnumber
-// 				gcr[7 + 20 - i + 1] = ((((gcrnumber & 1 << i)) >> i) ^ (gcr[7 + 20 - i] >> 6)) * 118; // exclusive ored with number before it multiplied by 64 to match output timer.
-// 			}
-// 			gcr[7] = 0;
-// #endif
-// 		}
+    if (state == TO_SEND)
+    {
+        state = SENDING;
+        pwm->serial_write(tx_buf, 21);
+        return;
+    }
+
+    if (pwm->serial_write(nullptr, 0) == 0)
+    {
+        state = RECEIVE;
+        pwm->set_mode(PwmIf::INPUT);
+        restart();
+    }
+}
+
+void Dshot::poll(void)
+{
+    now_us = timer->now_us();
+    if (run_time > now_us)
+        return;
+    run_time += 5;
+    if (state != RECEIVE)
+        send_dealing();
+    else
+        receive_dealing();
+}

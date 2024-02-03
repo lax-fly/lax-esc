@@ -7,9 +7,12 @@ uint32_t tim6_overflow = 0;
 static Timer timer;
 static bool timer_inited = false;
 
+#define SYSTICK_CLOCK_DIV 8
+#define SYSTICK_CLOCK (system_core_clock / SYSTICK_CLOCK_DIV)
+
 void systick_init(void)
 {
-    SysTick_Config(system_core_clock / 8000);
+    SysTick_Config(SYSTICK_CLOCK / 1000);
     systick_clock_source_config(SYSTICK_CLOCK_SOURCE_AHBCLK_DIV8);
     nvic_irq_enable(SysTick_IRQn, 0, 0);
 }
@@ -52,21 +55,12 @@ TimerIf *TimerIf::singleton()
 
 void Timer::delay_us(uint16_t nus)
 {
-    uint32_t cur = SysTick->VAL;
-    uint32_t last = cur;
-    uint32_t te = nus * 120;
-    uint32_t dt;
-    uint32_t t = 0;
-
-    while (t < te)
+    uint16_t te = TMR6->cval + nus;
+    while (TMR6->cval > te) // te overflowed
     {
-        cur = SysTick->VAL;
-        if (last >= cur)
-            dt = last - cur;
-        else
-            dt = last + 120000 - cur;
-        last = cur;
-        t += dt;
+    }
+    while (TMR6->cval < te)
+    {
     }
 }
 
@@ -90,7 +84,7 @@ uint64_t Timer::now_us(void) const
 
 void Timer::timing_task_1ms(Task task, void *data)
 {
-    timing_data = data;   // must set data before task, or, there is risk that data is not set when task is called by SysTick_Handler
+    timing_data = data; // must set data before task, or, there is risk that data is not set when task is called by SysTick_Handler
     timing_task = task;
 }
 
@@ -98,24 +92,24 @@ void Timer::delay_task_us(uint32_t nus, Task task, void *data)
 {
     delay_data = data;
     delay_task = task;
-    TMR14->cval = 0;    // clear counter
+    TMR14->cval = 0;            // clear counter
     TMR14->ctrl1_bit.tmren = 1; // enable counter
 }
 
 extern "C"
 {
-    void SysTick_Handler(void)  // 1ms
+    void SysTick_Handler(void) // 1ms
     {
         sys_ticks++;
         if (timer.timing_task)
             timer.timing_task(timer.timing_data);
     }
-    void TMR6_GLOBAL_IRQHandler(void)   // work as time base
+    void TMR6_GLOBAL_IRQHandler(void) // work as time base
     {
         TMR6->ists = 0;
         tim6_overflow++;
     }
-    void TMR14_GLOBAL_IRQHandler(void)  // to exec delay task
+    void TMR14_GLOBAL_IRQHandler(void) // to exec delay task
     {
         TMR14->ists = 0;
         TMR14->ctrl1_bit.tmren = 0; // disable counter

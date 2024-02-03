@@ -14,7 +14,6 @@ private:
         CRC,
     };
     TimerIf *timer;
-    PwmIf *pwm;
     Protocol::CallBack callback;
     uint32_t run_time;
     uint8_t rx_buf[64];
@@ -31,5 +30,6 @@ public:
     Serial();
     virtual ~Serial();
     virtual void set_package_callback(Protocol::CallBack callback);
+    virtual void send_package(const Package& pakcage);
     virtual void poll(void);
 };

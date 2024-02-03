@@ -13,12 +13,13 @@
 ######################################
 # target
 ######################################
-TARGET = at32f421
+BOARD ?= at32f421_v1_0
+TARGET = $(BOARD)
 MCU_FAMILY = at32f421
 DEVICE = at32f421x8
 FLASH_SIZE = 64k
 RAM_SIZE = 16k
-HEAP_SIZE = 0X800
+HEAP_SIZE = 0XC00
 STACK_SIZE = 0X400
 
 #######################################
@@ -52,10 +53,11 @@ MTR_LAYER_DIR = src/motor
 PRO_LAYER_DIR = src/protocol
 MSP_LAYER_DIR = src/msp
 START_UP_DIR = src/startup/$(MCU_FAMILY)
+BOARD_DEF_DIR = src/board
 
-APP_LAYER_INCLUDE  = $(APP_LAYER_DIR) $(MTR_LAYER_DIR) $(MSP_LAYER_DIR) $(PRO_LAYER_DIR)
-MTR_LAYER_INCLUDE  = $(MTR_LAYER_DIR) $(MTR_LAYER_DIR)/src $(MSP_LAYER_DIR)
-PRO_LAYER_INCLUDE  = $(PRO_LAYER_DIR) $(PRO_LAYER_DIR)/src $(MSP_LAYER_DIR)
+APP_LAYER_INCLUDE  = $(BOARD_DEF_DIR) $(APP_LAYER_DIR) $(MTR_LAYER_DIR) $(MSP_LAYER_DIR) $(PRO_LAYER_DIR)
+MTR_LAYER_INCLUDE  = $(BOARD_DEF_DIR) $(MTR_LAYER_DIR) $(MTR_LAYER_DIR)/src $(MSP_LAYER_DIR)
+PRO_LAYER_INCLUDE  = $(BOARD_DEF_DIR) $(PRO_LAYER_DIR) $(PRO_LAYER_DIR)/src $(MSP_LAYER_DIR)
 MSP_LAYER_INCLUDE  = $(MSP_LAYER_DIR) $(MSP_LAYER_DIR)/src/$(MCU_FAMILY) $(MSP_LAYER_DIR)/src/$(MCU_FAMILY)/stdlib src/msp/src/cm4
 
 SOURCES_DIR = $(START_UP_DIR) $(APP_LAYER_DIR) $(MTR_LAYER_DIR)/src $(PRO_LAYER_DIR)/src $(MSP_LAYER_DIR)/src $(MSP_LAYER_DIR)/src/$(MCU_FAMILY) $(MSP_LAYER_DIR)/src/$(MCU_FAMILY)/stdlib
@@ -119,7 +121,7 @@ AS_INCLUDES =
 
 # compile gcc flags
 ASFLAGS = $(MCU) $(AS_DEFS) $(AS_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections
-CFLAGS += $(MCU) $(C_DEFS) $(OPT) -Wall -fdata-sections -ffunction-sections
+CFLAGS += $(MCU) $(C_DEFS) $(OPT) -Wall -fdata-sections -ffunction-sections -D$(BOARD)
 
 ifeq ($(DEBUG), 1)
 CFLAGS += -Og -g -gdwarf-2
@@ -204,6 +206,14 @@ download: $(BUILD_DIR)/$(TARGET).hex
 	@bash $(DOWNLOAD_SCRIP) $(DEVICE) $(BUILD_DIR)/$(TARGET).hex
 
 #######################################
+# list all the target board suppported
+#######################################
+list:
+	@echo support target board list:
+	@for i in `ls src/board`; do tmp=$${i#board}; tmp=$${tmp#_}; echo "    $${tmp%.h}"; done
+
+
+#######################################
 # dependencies
 #######################################
--include $(wildcard $(BUILD_DIR)/*/*.d)
+-include $(shell find $(BUILD_DIR) -name *.d)

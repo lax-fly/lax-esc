@@ -1,11 +1,9 @@
 *.o
+*.d
 build
 
-# artefacts for keil
-*.uvopt
-*.uvgui.*
-*.uvguix.*
-JLinkLog.txt
+# only allowed new linker file
+linker
 
 # artefacts for VS Code
 .vscode/

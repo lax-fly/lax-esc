@@ -24,7 +24,7 @@ ENTRY(Reset_Handler)
 _estack = 0x20004000;    /* end of RAM */
 
 /* Generate a link error if heap and stack don't fit into RAM */
-_Min_Heap_Size = 0X800;
+_Min_Heap_Size = 0XC00;
 _Min_Stack_Size = 0X400;
 
 FLASH_SIZE = 64k;

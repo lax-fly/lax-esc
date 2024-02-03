@@ -1,9 +1,11 @@
 #include "protocol.h"
 #include "serial.h"
+#include "dshot.h"
 
 #include <assert.h>
 
 static Serial *serial = nullptr;
+static Dshot *dshot = nullptr;
 
 Protocol *Protocol::singleton(Type type)
 {
@@ -15,7 +17,9 @@ Protocol *Protocol::singleton(Type type)
         return serial = new Serial();
         break;
     case DSHOT:
-        /* code */
+        if (dshot)
+            return dshot;
+        return dshot = new Dshot();
 
     default:
         assert(false);

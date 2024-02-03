@@ -1,6 +1,7 @@
 #include "motor.h"
 #include "msp.h"
 #include "bldc.h"
+#include "board.h"
 #include <assert.h>
 #include <stdio.h>
 #include <utility>
@@ -63,12 +64,13 @@ static GpioIf *lc;
 
 static TimerIf *timer;
 
-#ifndef NDEBUG
-static GpioIf *debug_pin;
+#if !defined(NDEBUG) && DEBUG_PIN != PIN_NONE
+extern GpioIf *debug_pin;
 #endif
 
 static uint32_t batery_voltage = 12000; // default 12v, will be updated when adc sampled the voltage
 static uint32_t heavy_load_erpm = 0;    // erpm
+static uint32_t turn_dir_erpm = 0;
 static uint32_t erpm = 0;
 static uint32_t pwm_freq = 0;
 static float pwm_dutycycle = 0;
@@ -180,37 +182,33 @@ void set_frequency(uint32_t pwm_freq)
  */
 static CommutateMap commutate_matrix[6] = {0};
 
+
 Bldc::Bldc()
 {
     timer = TimerIf::singleton();
-#ifndef NDEBUG
-    debug_pin = GpioIf::new_instance(PA3);
-#endif
-    ha = PwmIf::new_instance(PA10);
-    hb = PwmIf::new_instance(PA9);
-    hc = PwmIf::new_instance(PA8);
-    la = GpioIf::new_instance(PB1);
-    lb = GpioIf::new_instance(PB0);
-    lc = GpioIf::new_instance(PA7);
+    ha = PwmIf::new_instance(MOS_A_HIGH_PIN);
+    hb = PwmIf::new_instance(MOS_B_HIGH_PIN);
+    hc = PwmIf::new_instance(MOS_C_HIGH_PIN);
+    la = GpioIf::new_instance(MOS_A_LOW_PIN);
+    lb = GpioIf::new_instance(MOS_B_LOW_PIN);
+    lc = GpioIf::new_instance(MOS_C_LOW_PIN);
     la->set_mode(GpioIf::OUTPUT);
     lb->set_mode(GpioIf::OUTPUT);
     lc->set_mode(GpioIf::OUTPUT);
-    cmp_a = ComparatorIf::new_instance(PA5, PA2, PIN_NONE);
-    cmp_b = ComparatorIf::new_instance(PA1, PA2, PIN_NONE);
-    cmp_c = ComparatorIf::new_instance(PA0, PA2, PIN_NONE);
-    adc_a = AdcIf::new_instance(PA5);
-    adc_b = AdcIf::new_instance(PA1);
-    adc_c = AdcIf::new_instance(PA0);
-    adc_bat = AdcIf::new_instance(PA6);
-    adc_cur = AdcIf::new_instance(PA4);
+    cmp_a = ComparatorIf::new_instance(CMP_A_POS_PIN, CMP_A_NEG_PIN, CMP_OUT_PIN);
+    cmp_b = ComparatorIf::new_instance(CMP_B_POS_PIN, CMP_B_NEG_PIN, CMP_OUT_PIN);
+    cmp_c = ComparatorIf::new_instance(CMP_C_POS_PIN, CMP_C_NEG_PIN, CMP_OUT_PIN);
+    adc_a = AdcIf::new_instance(ADC_A_PIN);
+    adc_b = AdcIf::new_instance(ADC_B_PIN);
+    adc_c = AdcIf::new_instance(ADC_C_PIN);
+    adc_bat = AdcIf::new_instance(ADC_BAT_PIN);
+    adc_cur = AdcIf::new_instance(ADC_CUR_PIN);
     set_throttle(0);
     batery_voltage = adc_bat->sample_voltage() * voltage_gain;
     batery_voltage = batery_voltage < VOLTAGE_1S ? VOLTAGE_1S : batery_voltage;
     heavy_load_erpm = batery_voltage * kv / 1000 * polar_cnt / 2 / 4;
+    turn_dir_erpm = 450 * polar_cnt / 2;
     timer->timing_task_1ms(routine_1kHz, nullptr);
-#ifndef NDEBUG
-    debug_pin->set_mode(GpioIf::OUTPUT);
-#endif
 }
 
 void routine_1kHz(void *data) // this determines pwm update frequency
@@ -240,7 +238,7 @@ void routine_1kHz(void *data) // this determines pwm update frequency
     if (braking)
     {
         pwm_dutycycle = 0;
-        if (erpm < min_throttle * heavy_load_erpm * 2) // braking util motor is slow enough
+        if (erpm < turn_dir_erpm) // braking util motor is slow enough
             braking = false;
     }
 
@@ -310,9 +308,9 @@ int zero_cross_check(int current_step)
     uint32_t T = 1000000 / pwm_freq;
 
     PwmIf *pwm = com_mtx->pwm;
-    uint32_t duty = pwm->duty();
-    uint32_t cycle = pwm->cycle();
-    uint32_t pos = pwm->pos();
+    uint32_t duty = pwm->get_duty();
+    uint32_t cycle = pwm->get_cycle();
+    uint32_t pos = pwm->get_pos();
     uint32_t error = 2 * cycle / T; // make 1us error, based on the cmp's ouput delay along with the startup dutycycle and frequency
     bool stall = 0;
     do // software cmp blanking
@@ -371,7 +369,7 @@ int zero_cross_check(int current_step)
 
     int edge = cmp_res - last_res;
 
-#ifndef NDEBUG
+#if !defined(NDEBUG) && DEBUG_PIN != PIN_NONE
     debug_pin->write(cmp_res);
 #endif
 

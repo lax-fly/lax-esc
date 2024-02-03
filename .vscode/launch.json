@@ -7,7 +7,7 @@
         {
             "name": "Cortex Debug",
             "cwd": "${workspaceFolder}",
-            "executable": "${workspaceFolder}/build/at32f421.elf",
+            "executable": "${workspaceFolder}/build/at32f421_v1_0.elf",
             "request": "launch",
             "type": "cortex-debug",
             "runToEntryPoint": "main",

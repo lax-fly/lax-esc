@@ -14,7 +14,9 @@ class Protocol
 public:
     enum CMD
     {
+        // reveive cmd
         NONE,
+        LOCKED,
         BEEP,
         VERSION,
         DIR,
@@ -22,6 +24,13 @@ public:
         SETTING,
         SAVE_SETTING,
         THROTTLE,
+
+        // response cmd
+        STATE_EVENT,
+        ERPM,
+        TEMPERATURE,
+        VOLTAGE,
+        CURRENT,
     };
     enum Type
     {
@@ -36,10 +45,12 @@ public:
             int value;
             const char *str;
         };
+        bool telemetry;
     };
     typedef void (*CallBack)(const Package &package);
     // the callback should copy the package(including the str), then process it outside the callback, warning: don't make the callback take too long
     virtual void set_package_callback(CallBack callback) = 0;
+    virtual void send_package(const Package& pakcage) = 0;
     virtual void poll(void) = 0;
     static Protocol *singleton(Type type);
 };

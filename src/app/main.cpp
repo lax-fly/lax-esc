@@ -3,12 +3,14 @@
 #include "stdio.h"
 #include "protocol.h"
 #include "sound.h"
+#include "board.h"
+#include <string.h>
 
-TimerIf *timer;
-UsartIf *debug_usart;
-Protocol *proto;
-MotorIf *motor;
-Sound *sound;
+TimerIf *timer = nullptr;
+UsartIf *debug_usart = nullptr;
+Protocol *proto = nullptr;
+MotorIf *motor = nullptr;
+Sound *sound = nullptr;
 
 enum State
 {
@@ -24,6 +26,12 @@ void depackage(const Protocol::Package &package)
 {
     switch (package.cmd)
     {
+    case Protocol::LOCKED:
+    {
+        Protocol::Package resp_package = {.cmd = Protocol::ERPM, .value = 0};
+        proto->send_package(resp_package);
+        break;
+    }
     case Protocol::BEEP:
         break;
     case Protocol::VERSION:
@@ -75,6 +83,10 @@ int main(void)
 {
     system_init();
     timer = TimerIf::singleton();
+#if !defined(NDEBUG) && DEBUG_PIN != PIN_NONE
+    debug_pin = GpioIf::new_instance(DEBUG_PIN);
+    debug_pin->set_mode(GpioIf::OUTPUT);
+#endif
     debug_usart = UsartIf::new_instance(PB6, PB7, 256000, 1);
     proto = Protocol::singleton(Protocol::SERIAL);
     proto->set_package_callback(depackage);
