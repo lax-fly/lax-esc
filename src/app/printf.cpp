@@ -17,6 +17,7 @@ extern "C"
     // refer to https://blog.csdn.net/CooCox_UP_Team/article/details/8465143
 
     extern int _end; // the heap region, defined in ld script
+    extern int _Min_Heap_Size;
 
     caddr_t _sbrk(int incr)
     {
@@ -28,6 +29,9 @@ extern "C"
         }
         prev_heap = heap;
         heap += incr;
+        if ((uint32_t)heap > (uint32_t)((char *)&_end + _Min_Heap_Size))
+            return nullptr;
+
         return (caddr_t)prev_heap;
     }
 
