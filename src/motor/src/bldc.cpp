@@ -182,7 +182,6 @@ void set_frequency(uint32_t pwm_freq)
  */
 static CommutateMap commutate_matrix[6] = {0};
 
-
 Bldc::Bldc()
 {
     timer = TimerIf::singleton();
@@ -208,7 +207,16 @@ Bldc::Bldc()
     batery_voltage = batery_voltage < VOLTAGE_1S ? VOLTAGE_1S : batery_voltage;
     heavy_load_erpm = batery_voltage * kv / 1000 * polar_cnt / 2 / 4;
     turn_dir_erpm = 450 * polar_cnt / 2;
+
+    min_throttle = 0.0004f * 1000 * kv / batery_voltage;  // 0.0004 = 0.05 * 11v / 1400kv
+    if (min_throttle < 0.05f)
+        min_throttle = 0.05f;
+
     timer->timing_task_1ms(routine_1kHz, nullptr);
+}
+
+Bldc::~Bldc()
+{
 }
 
 void routine_1kHz(void *data) // this determines pwm update frequency
@@ -406,9 +414,9 @@ void power_down(void)
 int Bldc::get_rpm() const
 {
     if (spin_direction >= 0)
-    return erpm * 2 / polar_cnt;
+        return erpm * 2 / polar_cnt;
     else
-    return -(erpm * 2 / polar_cnt);
+        return -(erpm * 2 / polar_cnt);
 }
 
 uint32_t Bldc::get_current() const

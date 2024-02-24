@@ -17,6 +17,7 @@ private:
 
 public:
     Bldc();
+    ~Bldc();
     virtual int get_rpm() const;
     virtual uint32_t get_current() const;
     virtual void set_throttle(float v);
