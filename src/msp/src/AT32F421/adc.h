@@ -11,6 +11,7 @@ private:
 
 public:
     Adc(adc_channel_select_type ch) : ch(ch) {}
+    virtual void prepare();
     virtual uint32_t sample_voltage(void) const;
     virtual uint32_t sample_temperature(void) const;
 };

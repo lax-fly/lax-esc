@@ -9,9 +9,13 @@ static uint32_t &adc_ctrl2 = *(uint32_t *)&ADC1->ctrl2;
 static volatile uint32_t &adc_sts = ADC1->sts;
 static uint32_t &adc_odt = *(uint32_t *)&ADC1->odt;
 
-static adc_channel_select_type pin2channel(Pin pin)
+static inline adc_channel_select_type pin2channel(Pin pin)
 {
     return (adc_channel_select_type)GPIO2IDX(pin);
+}
+
+void Adc::prepare(void)
+{
 }
 
 uint32_t Adc::sample_value(void) const

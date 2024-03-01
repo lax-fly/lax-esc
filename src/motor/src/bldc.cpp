@@ -300,7 +300,7 @@ int Commutate(int step)
     }
     com_mtx->commutate();
     com_mtx->cmp->prepare();
-    com_mtx->adc->sample_voltage(); // first call to enable channel
+    com_mtx->adc->prepare(); // first call to enable channel
     return 0;
 }
 

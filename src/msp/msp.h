@@ -99,7 +99,7 @@ class ComparatorIf
 {
 public:
     virtual ~ComparatorIf() {}
-    // do some prepare work if necessary, such as changing the pins to current cmp object when multiple pins share the same cmp internally
+    // do some prepare work if necessary, such as changing the pins to current cmp object when multiple pins share the same cmp peripheral internally
     virtual void prepare() = 0;
     // make sure the cmp's output delay is below 1us and hysteresis below 10mV, or this driver may not work properly
     virtual uint8_t cmp_result() const = 0;
@@ -111,6 +111,8 @@ class AdcIf
 {
 public:
     virtual ~AdcIf() {}
+    // do some prepare work if necessary, such as changing the pins to current adc object when multiple pins share the same adc peripheral internally
+    virtual void prepare() = 0;
     virtual uint32_t sample_voltage(void) const = 0; // in mV, // the implementing code must be done in 2us, which means the sample rate should be higher than 500kHz
     static AdcIf *new_instance(Pin pin);
 };
