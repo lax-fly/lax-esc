@@ -6,6 +6,16 @@
 #include <stdio.h>
 #include <utility>
 
+typedef struct
+{
+    void (*commutate)(void);
+    int step_fall;
+    int step_rise;
+    ComparatorIf *cmp;
+    AdcIf *adc;
+    PwmIf *pwm;
+} CommutateMap;
+
 enum Angle
 {
     ANGLE_1_875 = 5, // degree 1.875
@@ -37,7 +47,6 @@ static uint32_t voltage_gain = 11;    // the read voltage value divided by volta
 static void set_dutycycle(float dutycycle);
 static void set_frequency(uint32_t pwm_freq);
 static int Commutate(int step);
-static void power_down(void);
 static int zero_cross_check(int current_step);
 static void update_state(void);
 static int get_nxt_step(int current_step, int edge);
@@ -394,16 +403,6 @@ int get_nxt_step(int current_step, int edge)
         return com_mtx->step_fall;
     }
     return current_step;
-}
-
-void power_down(void)
-{
-    ha->disable();
-    la->unset();
-    hb->disable();
-    lb->unset();
-    hc->disable();
-    lc->unset();
 }
 
 int Bldc::get_rpm() const

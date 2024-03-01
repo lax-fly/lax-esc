@@ -1,16 +1,6 @@
 #pragma once
 #include "msp.h"
 
-typedef struct
-{
-    void (*commutate)(void);
-    int step_fall;
-    int step_rise;
-    ComparatorIf *cmp;
-    AdcIf *adc;
-    PwmIf *pwm;
-} CommutateMap;
-
 class Bldc : public MotorIf
 {
 private:
