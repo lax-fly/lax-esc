@@ -55,7 +55,6 @@ void depackage(const Protocol::Package &package)
         {
             state = ARMED;
             sound->armed_tone();
-            motor->arm(true);
         }
         else if (ARMED == state)
         {
@@ -75,7 +74,7 @@ void print_routine()
     if (run_time < timer->now_ms())
     {
         run_time = timer->now_ms() + 500;
-        printf("rpm: %d cur:%lu\n", motor->get_rpm(), motor->get_current());
+        printf("rpm: %d cur:%d\n", motor->get_rpm(), motor->get_current());
     }
 }
 

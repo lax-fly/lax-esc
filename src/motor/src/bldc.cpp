@@ -84,7 +84,6 @@ static uint32_t zero_interval;
 static uint64_t now;
 
 static char is_pwm_changed = 1;
-static bool is_armed = false;
 static bool braking = false;
 
 #define VOLTAGE_1S (4200) // mV
@@ -208,7 +207,7 @@ Bldc::Bldc()
     heavy_load_erpm = batery_voltage * kv / 1000 * polar_cnt / 2 / 4;
     turn_dir_erpm = 450 * polar_cnt / 2;
 
-    min_throttle = 0.0004f * 1000 * kv / batery_voltage;  // 0.0004 = 0.05 * 11v / 1400kv
+    min_throttle = 0.0004f * 1000 * kv / batery_voltage; // 0.0004 = 0.05 * 11v / 1400kv
     if (min_throttle < 0.05f)
         min_throttle = 0.05f;
 
@@ -249,9 +248,6 @@ void routine_1kHz(void *data) // this determines pwm update frequency
         if (erpm < turn_dir_erpm) // braking util motor is slow enough
             braking = false;
     }
-
-    if (!is_armed)
-        pwm_dutycycle = 0;
 
     pwm_freq = startup_freq + erpm; // e.g. 1400kV motor using 3S -> max erpm = 117600
     if (pwm_freq > max_pwm_freq)    // limit the max pwm freqence
@@ -419,7 +415,20 @@ int Bldc::get_rpm() const
         return -(erpm * 2 / polar_cnt);
 }
 
-uint32_t Bldc::get_current() const
+int Bldc::get_erpm() const
+{
+    if (spin_direction >= 0)
+        return erpm;
+    else
+        return -erpm;
+}
+
+int Bldc::get_e_period() const
+{
+    return 60 * 1000000 / erpm;
+}
+
+int Bldc::get_current() const
 {
     return adc_cur->sample_voltage() * current_gain;
 }
@@ -465,11 +474,6 @@ void Bldc::set_throttle(float v)
         commutate_matrix[4] = {BA, 0, 5, cmp_c, adc_c, hb};
         commutate_matrix[5] = {CA, 0, 1, cmp_b, adc_b, hc};
     }
-}
-
-void Bldc::arm(bool state)
-{
-    is_armed = state;
 }
 
 void Bldc::stop()
