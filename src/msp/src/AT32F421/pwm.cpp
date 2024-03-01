@@ -395,3 +395,30 @@ int Pwm::recv_pulses(uint32_t *pulses, uint32_t sz)
     restart_dma(dma, sz + 1);
     return 0;
 }
+
+uint32_t high_pulse;
+
+int Pwm::recv_high_pulse()
+{
+}
+
+void TMR3_GLOBAL_IRQHandler(void)
+{
+    extern uint32_t pulse;
+    static uint8_t bit = 0;
+    static uint32_t start = 0;
+    uint32_t end;
+    TMR3->ists = 0;
+    if (bit == 0)
+        start = TMR3->c1dt;
+    else
+    {
+        end = TMR3->c1dt;
+        if (end < start)
+            pulse = TMR3->pr + 1 - start + end;
+        else
+            pulse = end - start;
+    }
+    bit = !bit;
+    TMR3->cctrl_bit.c1p = bit;
+}

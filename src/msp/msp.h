@@ -87,6 +87,7 @@ public:
      * @brief can capture
      * @return -1 if no pulse received, else return the most recently received pulse width in ns
      */
+    virtual int recv_high_pulse() = 0;
     static PwmIf *new_instance(Pin pin);
 };
 

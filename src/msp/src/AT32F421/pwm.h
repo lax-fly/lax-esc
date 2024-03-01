@@ -43,4 +43,5 @@ public:
     virtual void set_mode(Mode mode);
     virtual int send_pulses(const uint32_t *pulses, uint32_t sz); // async
     virtual int recv_pulses(uint32_t *pulses, uint32_t sz);
+    virtual int recv_high_pulse();
 };

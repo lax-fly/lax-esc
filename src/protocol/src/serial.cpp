@@ -1,26 +1,20 @@
 #include "serial.h"
 #include "string.h"
 #include "stdlib.h"
+#include "motor.h"
 
 extern UsartIf *debug_usart;
+extern MotorIf *motor;
 
-Serial::Serial() : callback(nullptr), run_time(0)
+Serial::Serial()
 {
     timer = TimerIf::singleton();
-    crc = CrcIf::singleton();
-    crc->set_start(0xFF);
-    crc->set_poly(0xB7);
     run_time = 0;
     restart();
 }
 
 Serial::~Serial()
 {
-}
-
-void Serial::set_package_callback(Protocol::CallBack callback)
-{
-    this->callback = callback;
 }
 
 void Serial::restart(void)
@@ -37,7 +31,7 @@ void Serial::proccess(void)
     if (process_idx == rd_sz)
         return;
 
-    uint8_t byte = rx_buf[process_idx++];
+    process_idx++;
 
     if (process_idx > 2)
     {
@@ -45,102 +39,17 @@ void Serial::proccess(void)
         {
             rx_buf[process_idx - 2] = 0;
             char *p = (char *)rx_buf;
-            package.cmd = NONE;
             if (STR_CMP((char *)rx_buf, "throttle ") == 0)
             {
-                package.cmd = THROTTLE;
                 p += 9;
             }
-            else if (STR_CMP((char *)rx_buf, "beep ") == 0)
-            {
-                package.cmd = BEEP;
-                p += 5;
-            }
-            else if (STR_CMP((char *)rx_buf, "dir ") == 0)
-            {
-                package.cmd = DIR;
-                p += 4;
-            }
-            if (package.cmd != NONE)
-            {
-                package.value = strtod(p, nullptr);
-                if (callback)
-                    callback(package);
-                restart();
-            }
+            int value = strtod(p, nullptr);
+            motor->set_throttle(value / 2000.0f);
+            restart();
         }
         else if (process_idx == sizeof(rx_buf) / sizeof(rx_buf[0]))
             restart();
     }
-    // switch (state)
-    // {
-    // case SYNC:
-    //     if (byte == 0x00)
-    //     {
-    //         state = CMD;
-    //         crc->set_start(0xFF);
-    //     }
-    //     break;
-    // case CMD:
-    //     switch (byte)
-    //     {
-    //     case Protocol::BEEP:
-    //     case Protocol::VERSION:
-    //     case Protocol::DIR:
-    //     case Protocol::MODE_3D:
-    //     case Protocol::SETTING:
-    //     case Protocol::SAVE_SETTING:
-    //     case Protocol::THROTTLE:
-    //         package.cmd = (Protocol::CMD)byte;
-    //         state = DATA;
-    //         crc_sum = crc->calc(byte);
-    //         break;
-
-    //     default:
-    //         state = SYNC;
-    //         break;
-    //     }
-    //     break;
-    // case DATA:
-    //     switch (byte)
-    //     {
-    //     case Protocol::BEEP:
-    //     case Protocol::DIR:
-    //     case Protocol::MODE_3D:
-    //         package.value = (int8_t)byte;
-    //         state = CRC;
-    //         crc_sum = crc->calc(byte);
-    //         break;
-    //     case Protocol::SETTING:
-    //     case Protocol::SAVE_SETTING:
-    //     case Protocol::VERSION:
-    //         state = CRC;
-    //         crc_sum = crc->calc(byte);
-    //         break;
-
-    //     default:
-    //         state = SYNC;
-    //         break;
-    //     }
-    //     break;
-    // case CRC:
-    //     //if (crc_sum == byte)
-    //     {
-    //         if (callback)
-    //             callback(package);
-    //         debug_usart->async_send(rx_buf, process_idx);
-    //         restart();
-    //     }
-    //     state = SYNC;
-    //     break;
-
-    // default:
-    //     break;
-    // }
-}
-
-void Serial::send_package(const Protocol::Package& pakcage)
-{
 }
 
 void Serial::poll(void)
@@ -149,7 +58,7 @@ void Serial::poll(void)
     uint32_t now = timer->now_ms();
     if (now < run_time)
         return;
-    run_time = now + 1; // baudrate > 9600
+    run_time = now + 1; // baudrate > 9600 required
     int rd_sz = debug_usart->async_recv(nullptr, sizeof(rx_buf));
     if (rd_sz == 0)
         return;

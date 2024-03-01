@@ -1,56 +1,22 @@
 #pragma once
-
-// 1 - 5：beep（1 = low freq.5 = high freq）
-//     6：esc信息请求（fw版本和通过tlm线发送的SN）
-//     7：一个方向旋转
-//     8：另一个方向旋转
-//     9：3d模式关闭
-//     10：3d模式打开
-//     11：esc设置请求（saved settings over the TLM wire）
-//     12：保存设置
+#include "msp.h"
 
 class Protocol
 {
 public:
-    enum CMD
-    {
-        // reveive cmd
-        NONE,
-        LOCKED,
-        BEEP,
-        VERSION,
-        DIR,
-        MODE_3D,
-        SETTING,
-        SAVE_SETTING,
-        THROTTLE,
-
-        // response cmd
-        STATE_EVENT,
-        ERPM,
-        TEMPERATURE,
-        VOLTAGE,
-        CURRENT,
-    };
     enum Type
     {
-        DSHOT,
+        AUTO_DETECT,
+        BRUSHED,
+        STD_PWM,
+        ONESHOT,    // oneshot125 oneshot42 multishot
+        DSHOT,      // dshot 150 300 600,bi-direction dshot
+        PROSHOT,
         SERIAL,
     };
-    struct Package
-    {
-        CMD cmd;
-        union
-        {
-            int value;
-            const char *str;
-        };
-        bool telemetry;
-    };
-    typedef void (*CallBack)(const Package &package);
+    virtual ~Protocol() {}
     // the callback should copy the package(including the str), then process it outside the callback, warning: don't make the callback take too long
-    virtual void set_package_callback(CallBack callback) = 0;
-    virtual void send_package(const Package& pakcage) = 0;
     virtual void poll(void) = 0;
-    static Protocol *singleton(Type type);
+    static Protocol *singleton(Type type, Pin pin);
+    static Type auto_detect(Pin pin);
 };
