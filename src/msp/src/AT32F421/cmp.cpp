@@ -32,6 +32,8 @@ ComparatorIf *ComparatorIf::new_instance(Pin pos_pin, Pin neg_pin, Pin out_pin)
 
 Comparator::Comparator(Pin pos_pin, Pin neg_pin, Pin out_pin)
 {
+    cmp_non_inverting_type non_invert_in;
+    cmp_inverting_type invert_in;
     switch (pos_pin)
     {
     case PA5:
@@ -65,6 +67,7 @@ Comparator::Comparator(Pin pos_pin, Pin neg_pin, Pin out_pin)
         assert(false);
         break;
     }
+    input_pins = (non_invert_in << 7) | (invert_in << 4);
     switch (out_pin)
     {
     case PA0:
@@ -81,9 +84,15 @@ Comparator::Comparator(Pin pos_pin, Pin neg_pin, Pin out_pin)
     }
 }
 
+volatile uint32_t &cmp_ctrl = CMP->ctrlsts;
+
+void Comparator::prepare()
+{
+    cmp_ctrl &= ~(0b11111 << 4);
+    cmp_ctrl |= input_pins;
+}
+
 uint8_t Comparator::cmp_result() const
 {
-    CMP->ctrlsts_bit.cmpninvsel = non_invert_in;
-    CMP->ctrlsts_bit.cmpinvsel = invert_in;
-    return CMP->ctrlsts_bit.cmpvalue;
+    return !!(cmp_ctrl & (1 << 30));
 }

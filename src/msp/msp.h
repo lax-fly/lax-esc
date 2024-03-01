@@ -99,6 +99,8 @@ class ComparatorIf
 {
 public:
     virtual ~ComparatorIf() {}
+    // do some prepare work if necessary, such as changing the pins to current cmp object when multiple pins share the same cmp internally
+    virtual void prepare() = 0;
     // make sure the cmp's output delay is below 1us and hysteresis below 10mV, or this driver may not work properly
     virtual uint8_t cmp_result() const = 0;
     // out_pin is not necessary, and used for debug, set out_pin to PIN_NONE when not used;

@@ -11,10 +11,10 @@
 class Comparator : public ComparatorIf
 {
 private:
-    cmp_non_inverting_type non_invert_in;
-    cmp_inverting_type invert_in;
+    int input_pins;
 
 public:
     Comparator(Pin pos_pin, Pin neg_pin, Pin out_pin);
+    virtual void prepare();
     virtual uint8_t cmp_result() const;
 };

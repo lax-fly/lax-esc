@@ -299,7 +299,7 @@ int Commutate(int step)
             return -1;
     }
     com_mtx->commutate();
-    com_mtx->cmp->cmp_result();
+    com_mtx->cmp->prepare();
     com_mtx->adc->sample_voltage(); // first call to enable channel
     return 0;
 }
