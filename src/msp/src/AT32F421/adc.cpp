@@ -4,6 +4,10 @@
 #include <assert.h>
 
 static bool g_adc_inited = false;
+static uint32_t &adc_osq = *(uint32_t *)&ADC1->osq3;
+static uint32_t &adc_ctrl2 = *(uint32_t *)&ADC1->ctrl2;
+static volatile uint32_t &adc_sts = ADC1->sts;
+static uint32_t &adc_odt = *(uint32_t *)&ADC1->odt;
 
 static adc_channel_select_type pin2channel(Pin pin)
 {
@@ -12,12 +16,12 @@ static adc_channel_select_type pin2channel(Pin pin)
 
 uint32_t Adc::sample_value(void) const
 {
-    ADC1->osq3 = ch;   // change channel to this adc object
-    ADC1->ctrl2_bit.ocswtrg = 1;
-    while (!(ADC1->sts & ADC_CCE_FLAG))
+    adc_osq = ch; // change channel to this adc object
+    adc_ctrl2 |= 1 << 22;
+    while (!(adc_sts & ADC_CCE_FLAG))
     {
     }
-    return ADC1->odt_bit.odt;
+    return adc_odt;
 }
 
 uint32_t Adc::sample_voltage(void) const
@@ -25,16 +29,29 @@ uint32_t Adc::sample_voltage(void) const
     return sample_value() * 3280 / 4096;
 }
 
+uint32_t Adc::sample_temperature(void) const
+{
+    return (sample_voltage() - 1280) * 10 / 43 + 25;
+}
 
 AdcIf *AdcIf::new_instance(Pin pin)
 {
-    assert(pin < PA8);  // other pins are not supported yet
-    Adc *adc = new Adc(pin2channel(pin));
-    Gpio::setup_af(pin, Gpio::AF_ANALOG);
+    assert(pin < PA8 || pin == PIN_MAX); // other pins are not supported yet
+
+    adc_channel_select_type ch;
+    if (pin == PIN_MAX)
+        ch = ADC_CHANNEL_16;
+    else
+    {
+        ch = pin2channel(pin);
+        Gpio::setup_af(pin, Gpio::AF_ANALOG);
+    }
+
+    Adc *adc = new Adc(ch);
     if (g_adc_inited)
         return adc;
 
-    g_adc_inited =true;
+    g_adc_inited = true;
     adc_base_config_type adc_base_struct;
     crm_periph_clock_enable(CRM_ADC1_PERIPH_CLOCK, TRUE);
     crm_adc_clock_div_set(CRM_ADC_DIV_6);
@@ -56,6 +73,7 @@ AdcIf *AdcIf::new_instance(Pin pin)
     adc_ordinary_channel_set(ADC1, ADC_CHANNEL_5, 1, ADC_SAMPLETIME_1_5);
     adc_ordinary_channel_set(ADC1, ADC_CHANNEL_6, 1, ADC_SAMPLETIME_1_5);
     adc_ordinary_channel_set(ADC1, ADC_CHANNEL_7, 1, ADC_SAMPLETIME_1_5);
+    adc_ordinary_channel_set(ADC1, ADC_CHANNEL_16, 1, ADC_SAMPLETIME_1_5);
 
     adc_ordinary_conversion_trigger_set(ADC1, ADC12_ORDINARY_TRIG_SOFTWARE, TRUE);
 
