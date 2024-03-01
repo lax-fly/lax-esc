@@ -31,6 +31,7 @@ public:
     Gpio(gpio_type * regs, Pin pin) : regs(regs), pin_idx(GPIO2IDX(pin)), pin_bit(GPIO2BIT(pin))
     {
     }
+    ~Gpio(){}
     static void setup_af(Pin pin, AfMode mode, gpio_mux_sel_type function = GPIO_MUX_0);
 };
 

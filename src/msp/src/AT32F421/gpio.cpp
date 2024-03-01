@@ -95,7 +95,7 @@ void Gpio::write(uint8_t bit)
 
 uint8_t Gpio::read()
 {
-    return ((uint8_t)(regs->idt & pin_bit));
+    return (!!(regs->idt & pin_bit));
 }
 
 void Gpio::set()
