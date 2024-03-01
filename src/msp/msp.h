@@ -45,32 +45,48 @@ class PwmIf
 public:
     enum Mode
     {
-        INPUT = 1,  // to recieve pwm input
-        OUTPUT = 2, // to output pwm
-        SERIAL = 4, // enable serial functions like serial_write, read_digital
+        INPUT = 0,      // to recieve pwm input
+        OUTPUT = 1,     // to output pwm, polarity is low(idle high)
     };
     virtual ~PwmIf() {}
     virtual void set_dutycycle(float dutycycle) = 0; // 0.0~1.0
+    /**
+     * @brief set frequency, valid range: 10Hz~100kHz
+     * when in pwm INPUT mode, this is used to scale the measuring range, alse scales the value in data of recv_pulses and its accuracy
+     * when in pwm OUTPUT mode, this is used to scale the output frequency range(to smaller), (1k~50k)/scale
+     */
     virtual void set_freq(uint32_t freq) = 0;
     virtual void enable() = 0;
     virtual void disable() = 0;
-    virtual uint32_t get_duty() const = 0;  // return the pwm duty length
-    virtual uint32_t get_cycle() const = 0; // return the pwm cycle length
-    virtual uint32_t get_pos() const = 0;   // return the current pwm output position in the cycle
+    virtual uint32_t get_duty() const = 0;  // return the pwm duty length, unit insensitive(normally the timer tick count)
+    virtual uint32_t get_cycle() const = 0; // return the pwm cycle length, unit insensitive(normally the timer tick count)
+    virtual uint32_t get_pos() const = 0;   // return the current pwm output position in the cycle, unit insensitive(normally the timer tick count)
     /**
      * @brief set the pwm mode, a pwm object is default OUTPUT mode once created
-     * when SERIAL is set, serial_write and read_digital functions can now be used.
-     * before using serial_write, call set_mode(OUTPUT) after set_mode(SERIAL)
-     * before using read_digital, call set_mode(INPUT) after set_mode(SERIAL)
+     * when SERIAL is set, send_pulses and read_digital functions can now be used.
+     * before using send_pulses, call set_mode(OUTPUT), polarity is fixed to low
+     * before using read_digital, call set_mode(INPUT)
      */
     virtual void set_mode(Mode mode) = 0;
     /**
      *  @brief write a array of pulse in ns to the output, set pulses to null to check if last write is finished
-     * if last write is finished, return 0, or return -1
-     *  @param pulses will be copied internally
+     * if last write is finished, return 0, or return -1. send_pulses is asynchronous.
+     *  @param pulses will be copied internally, unit ns, default support range: 0~500000ns.
+     *  use set_freq to grow this range. note, the wider range, the lower accuracy
+     *  for example, if you set_freq(1000), the period will be 1/1000 = 1ms, so the range will be 0~1ms
      */
-    virtual int serial_write(const uint32_t *pulses = nullptr, uint32_t sz = 0) = 0; // async
-    virtual int serial_read(uint32_t *data = nullptr, uint32_t sz = 0) = 0;          // async
+    virtual int send_pulses(const uint32_t *pulses = 0, uint32_t sz = 0) = 0; //
+    /**
+     * @brief measuring the input pulses, |```|___| is treated as two pulses(up pulse and down pulse)，
+     *        notice that the recv_pulses don't care about the pulse direction but the pulse width, pulse width must be in unit ns,
+     *        the accuracy granularity must be lower than 1/freq/4000, where the 'freq' is set by set_freq
+     * @return currently received pulses
+     */
+    virtual int recv_pulses(uint32_t *pulses = 0, uint32_t sz = 0) = 0;
+    /**
+     * @brief can capture
+     * @return -1 if no pulse received, else return the most recently received pulse width in ns
+     */
     static PwmIf *new_instance(Pin pin);
 };
 
@@ -113,8 +129,9 @@ public:
     virtual ~AdcIf() {}
     // do some prepare work if necessary, such as changing the pins to current adc object when multiple pins share the same adc peripheral internally
     virtual void prepare() = 0;
-    virtual uint32_t sample_voltage(void) const = 0; // in mV, // the implementing code must be done in 2us, which means the sample rate should be higher than 500kHz
-    static AdcIf *new_instance(Pin pin);
+    virtual uint32_t sample_voltage(void) const = 0;     // in mV, // the implementing code must be done in 2us, which means the sample rate should be higher than 500kHz
+    virtual uint32_t sample_temperature(void) const = 0; // in Celsius degree
+    static AdcIf *new_instance(Pin pin);                 // when pin == PIN_MAX, this will return a instance binded to temperature channel
 };
 
 class TimerIf

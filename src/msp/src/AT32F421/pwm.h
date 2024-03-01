@@ -15,23 +15,24 @@ private:
     float dutycycle;
     uint32_t freq;
     uint16_t duty;
-    uint16_t cycle;
-    uint16_t* tx_buf;
-    uint16_t* rx_buf;
-    uint32_t rd_idx;
+    uint32_t cycle;
+    uint32_t div;
+    uint16_t buf[64];
+    int rd_idx;
     uint32_t *user_buf;
-    uint32_t user_buf_sz;
+    int rd_sz;
     uint32_t reg_out_cctrl;
     uint32_t reg_in_cctrl;
     uint32_t reg_in_cm;
     uint32_t reg_out_cm;
-    uint32_t mode;
+    bool using_dma;
     void dma_config();
     void switch2output();
     void switch2input();
 
 public:
     Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma);
+    ~Pwm();
     virtual void set_dutycycle(float dutycycle);
     virtual void set_freq(uint32_t freq);
     virtual uint32_t get_duty() const;  // return the pwm duty length
@@ -40,6 +41,6 @@ public:
     virtual void enable();
     virtual void disable();
     virtual void set_mode(Mode mode);
-    virtual int serial_write(const uint32_t *pulses, uint32_t sz); // async
-    virtual int serial_read(uint32_t *data, uint32_t sz);          // async
+    virtual int send_pulses(const uint32_t *pulses, uint32_t sz); // async
+    virtual int recv_pulses(uint32_t *pulses, uint32_t sz);
 };

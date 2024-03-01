@@ -9,7 +9,6 @@ Dshot::Dshot()
     timer = TimerIf::singleton();
     // GpioIf *io = GpioIf::new_instance(PA9);
     pwm = PwmIf::new_instance(SIGNAL_IN_PIN);
-    pwm->set_mode(PwmIf::SERIAL);
     pwm->set_mode(PwmIf::INPUT);
     run_time = 0;
     callback = nullptr;
@@ -30,7 +29,7 @@ void Dshot::restart(void)
     package.cmd = NONE;
     dshot_bit = rd_sz = 0;
     if (state == RECEIVE)
-        pwm->serial_read(rx_buf, sizeof(rx_buf) / sizeof(rx_buf[0]));
+        pwm->recv_pulses(rx_buf, sizeof(rx_buf) / sizeof(rx_buf[0]));
 }
 
 void Dshot::proccess(void)
@@ -227,7 +226,7 @@ void Dshot::send_package(const Protocol::Package &pakcage)
 void Dshot::receive_dealing()
 {
     proccess(); // one byte once to avoid long time cpu occupation
-    int rd_sz = pwm->serial_read();
+    int rd_sz = pwm->recv_pulses();
     if (rd_sz == 0)
         return;
     if (rd_sz == this->rd_sz)
@@ -246,11 +245,11 @@ void Dshot::send_dealing()
     if (state == TO_SEND)
     {
         state = SENDING;
-        pwm->serial_write(tx_buf, 21);
+        pwm->send_pulses(tx_buf, 21);
         return;
     }
 
-    if (pwm->serial_write(nullptr, 0) == 0)
+    if (pwm->send_pulses(nullptr, 0) == 0)
     {
         state = RECEIVE;
         pwm->set_mode(PwmIf::INPUT);

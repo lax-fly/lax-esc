@@ -4,8 +4,7 @@
 
 #define ARRAY_CNT(x) (sizeof(x) / sizeof(x[0]))
 #define BUF_SIZE 64
-#define TIM_FREQ_DIV 2
-#define TIM_FREQ (120000000 / TIM_FREQ_DIV)
+#define SYS_CLOCK_FREQ 120000000
 
 #define DEFAULT_PWM_PERIOD 65536
 
@@ -28,8 +27,8 @@ PwmMap pwm_maps[] = {
     {TMR3, PB5, TMR_SELECT_CHANNEL_2, GPIO_MUX_0, 0},
     {TMR3, PB0, TMR_SELECT_CHANNEL_3, GPIO_MUX_1, DMA1_CHANNEL2},
     {TMR3, PB1, TMR_SELECT_CHANNEL_4, GPIO_MUX_1, DMA1_CHANNEL3},
-
-    {TMR14, PA4, TMR_SELECT_CHANNEL_1, GPIO_MUX_0, 0},
+    {TMR3, PA6, TMR_SELECT_CHANNEL_1, GPIO_MUX_1, DMA1_CHANNEL4},
+    {TMR3, PA7, TMR_SELECT_CHANNEL_2, GPIO_MUX_1, 0},
 
     {TMR15, PA2, TMR_SELECT_CHANNEL_1, GPIO_MUX_0, DMA1_CHANNEL5},
     {TMR15, PA3, TMR_SELECT_CHANNEL_2, GPIO_MUX_0, DMA1_CHANNEL5},
@@ -46,7 +45,7 @@ PwmIf *PwmIf::new_instance(Pin pin)
 
     assert(index < ARRAY_CNT(pwm_maps));
 
-    struct PwmMap pwm_map = pwm_maps[index];
+    struct PwmMap &pwm_map = pwm_maps[index];
 
     Gpio::setup_af(pin, Gpio::AF_OUTPUT_PP, pwm_map.af);
 
@@ -60,6 +59,9 @@ PwmIf *PwmIf::new_instance(Pin pin)
 
 void Pwm::dma_config()
 {
+    if (using_dma)
+        return;
+    using_dma = true;
     // dma config
     crm_periph_clock_enable(CRM_DMA1_PERIPH_CLOCK, TRUE);
     dma_init_type dma_init_struct;
@@ -72,8 +74,10 @@ void Pwm::dma_config()
     dma_init_struct.priority = DMA_PRIORITY_LOW;
     dma_init_struct.loop_mode_enable = FALSE;
     dma_init(dma, &dma_init_struct);
+    dma->ctrl_bit.chen = 0; // disable channel
     dma->paddr = (uint32_t)ch_dr;
-    dma->ctrl_bit.chen = 0;         // disable channel
+
+    dma->maddr = (uint32_t)buf;
     tim->iden |= 1 << (9 + ch_idx); // enable tmr's dma request
 }
 
@@ -101,7 +105,7 @@ Pwm::Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma)
         break;
     }
 
-    tmr_base_init(tim, DEFAULT_PWM_PERIOD - 1, TIM_FREQ_DIV - 1);
+    tmr_base_init(tim, DEFAULT_PWM_PERIOD - 1, 0);
     tmr_cnt_dir_set(tim, TMR_COUNT_UP);
     tmr_clock_source_div_set(tim, TMR_CLOCK_DIV1);
     tmr_period_buffer_enable(tim, FALSE);
@@ -146,37 +150,42 @@ Pwm::Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma)
     this->ch = ch;
     this->ch_idx = ch >> 1;
     this->ch_dr = &(&tim->c1dt)[ch_idx];
-    this->dutycycle = 0;
-    this->duty = 0;
-    this->cycle = DEFAULT_PWM_PERIOD - 1;
-    this->freq = TIM_FREQ / this->cycle;
+    this->freq = 0;
+    this->using_dma = false;
+    set_freq(1000);
+    set_dutycycle(0);
 
-    this->tx_buf = nullptr;
-    this->rx_buf = nullptr;
-
-    this->mode = OUTPUT;
     switch2output(); // OUTPUT default
+}
+
+Pwm::~Pwm()
+{
 }
 
 // dutycycle 0.0000 ~ 1.0
 void Pwm::set_dutycycle(float dutycycle)
 {
-    if (this->dutycycle == dutycycle)
+    if (__builtin_expect(this->dutycycle == dutycycle, false))
         return;
     this->dutycycle = dutycycle;
-    duty = dutycycle * cycle;
-    *ch_dr = duty;
+    *ch_dr = dutycycle * cycle;
 }
 
 void Pwm::set_freq(uint32_t freq)
 {
-    if (this->freq == freq || freq < 1000 || freq > 12000000) // the current min and max freq are 1000 and 12MHz, value outside that is illegal
+    if (__builtin_expect(this->freq == freq, false)) // the current min and max freq are 1000 and 12MHz, value outside that is illegal
         return;
     this->freq = freq;
-    cycle = TIM_FREQ / freq; // tim's clock frequency
-    duty = dutycycle * cycle;
+    div = 1;
+    cycle = SYS_CLOCK_FREQ / freq;
+    while (__builtin_expect(cycle > 65535, false))
+    {                // at most loop 3 times while freq = 1
+        div <<= 4;   // *16
+        cycle >>= 4; // /16
+    }
+    tim->div = div - 1;
     tim->pr = cycle - 1;
-    *ch_dr = duty;
+    *ch_dr = dutycycle * cycle;
 }
 
 uint32_t Pwm::get_duty() const
@@ -186,7 +195,7 @@ uint32_t Pwm::get_duty() const
 
 uint32_t Pwm::get_cycle() const
 {
-    return tim->pr + 1;
+    return cycle;
 }
 
 uint32_t Pwm::get_pos() const
@@ -261,13 +270,10 @@ void Pwm::switch2output() // about 1us
     tim->pr = cycle - 1;
     tim->cctrl |= reg_out_cctrl;
 
-    if (mode & SERIAL)
-    {
-        uint32_t tmp = dma->ctrl;
-        tmp &= 0xbfee; // lsb is channel enable bit, disable it first
-    tmp |= DMA_DIR_MEMORY_TO_PERIPHERAL;
-        dma->ctrl = tmp;
-    }
+    // uint32_t tmp = dma->ctrl;
+    // tmp &= 0xbfee; // lsb is channel enable bit, disable it first
+    // tmp |= DMA_DIR_MEMORY_TO_PERIPHERAL;
+    // dma->ctrl = tmp;
 }
 
 void Pwm::switch2input()
@@ -290,101 +296,93 @@ void Pwm::switch2input()
     }
     tim->cctrl |= reg_in_cctrl;
 
-    if (mode & SERIAL)
-    {
-        uint32_t tmp = dma->ctrl;
-        tmp &= 0xbfee;
-        // tmp |= DMA_DIR_PERIPHERAL_TO_MEMORY; // no need for DMA_DIR_PERIPHERAL_TO_MEMORY = 0
-        dma->ctrl = tmp;
-        user_buf = nullptr;
-    }
+    // uint32_t tmp = dma->ctrl;
+    // tmp &= 0xbfee;
+    // // tmp |= DMA_DIR_PERIPHERAL_TO_MEMORY; // no need for DMA_DIR_PERIPHERAL_TO_MEMORY = 0
+    // dma->ctrl = tmp;
+    // user_buf = nullptr;
 }
 
 void Pwm::set_mode(PwmIf::Mode mode)
 {
-    this->mode |= mode;
     switch (mode)
     {
     case PwmIf::INPUT:
     {
+        dma_config();
         switch2input();
         break;
     }
     case PwmIf::OUTPUT:
     {
+        dma_config();
         switch2output();
         break;
     }
-    case PwmIf::SERIAL:
-        dma_config();
-        rx_buf = new uint16_t[BUF_SIZE];
-        tx_buf = new uint16_t[BUF_SIZE];
-        break;
     default:
         assert(false);
         break;
     }
 }
 
-int Pwm::serial_write(const uint32_t *pulses, uint32_t sz)
+int Pwm::send_pulses(const uint32_t *pulses, uint32_t sz)
 {
     assert(sz < BUF_SIZE);
     if (!pulses)
         return dma->dtcnt;
 
     uint32_t i = 0;
-    uint32_t period = 1000000000 / TIM_FREQ; // make sure TIM_FREQ <= 1000000000
-    for (; i < sz; i++)                      // cost 3us
+    uint32_t scale = 1000 * div;
+    for (; i < sz; i++) // cost about 3us
     {
-        assert(pulses[i] < 50000); // support only pulse below 50us
-        uint32_t pulse = pulses[i] / period;
-        tx_buf[i] = pulse;
+        uint32_t ticks = pulses[i] * (SYS_CLOCK_FREQ / 1000000) / scale; // map the pulse time to ticks
+        buf[i] = ticks;
     }
-    tx_buf[i] = 0;
-    tim->cval = 0;
+    buf[i] = 0;
     dma->ctrl_bit.chen = 0;
     dma->dtcnt = sz + 1;
-    dma->maddr = (uint32_t)tx_buf;
     dma->ctrl_bit.chen = 1;
     return 0;
 }
 
 #pragma GCC push_options
 #pragma GCC optimize("O0")
-static inline void restart_dma(dma_channel_type *dma, uint16_t *buf, uint32_t sz)
+static inline void restart_dma(dma_channel_type *dma, uint32_t sz)
 {
-    register uint32_t tmp = dma->ctrl;
-    register uint32_t disable_dma = tmp & ~1; // unset dma eable bit
-    register uint32_t enable_dma = tmp | 1;   // set dma eable bit
-    dma->ctrl = disable_dma;
-    dma->dtcnt = sz;
-    dma->maddr = (uint32_t)buf;
-    dma->ctrl = enable_dma;
-    dma->ctrl = disable_dma; // first restart to clear the last cached DMA event, which is not expected, it may be at32's bug
-    dma->dtcnt = sz;
-    dma->ctrl = enable_dma;
+    volatile uint32_t &ctrl = dma->ctrl;
+    volatile uint32_t &dtcnt = dma->dtcnt;
+    register uint32_t tmp = ctrl;
+    register uint32_t disable_dma = tmp & ~1; // unset dma enable bit
+    register uint32_t enable_dma = tmp | 1;   // set dma enable bit
+    ctrl = disable_dma;
+    dtcnt = sz;
+    ctrl = enable_dma;
+    ctrl = disable_dma; // first restart to clear the last cached DMA event, which is not expected, it may be at32's bug
+    dtcnt = sz;
+    ctrl = enable_dma;
 }
 #pragma GCC pop_options
 
-int Pwm::serial_read(uint32_t *data, uint32_t sz)
+int Pwm::recv_pulses(uint32_t *pulses, uint32_t sz)
 { // support max frame length 500us, which is far more enough for dshot150 to dshot 1200
     assert(sz < BUF_SIZE);
-    if (!data)
+
+    if (__builtin_expect(pulses == nullptr, true))
     {
         if (__builtin_expect(!user_buf, 0))
-            return rd_idx;
-        uint32_t data_sz = user_buf_sz + 1 - dma->dtcnt;
-        if (rd_idx + 1 >= data_sz)
+            return 0;
+        int data_sz = rd_sz - (int)dma->dtcnt;
+        if (rd_idx >= data_sz)
             return rd_idx; // no new data
 
-        uint32_t scale = 256 * 1000 / (TIM_FREQ / 1000000); // count of ns in one tick, multiplied by 256 to lower the dividing error;
-        for (; rd_idx < data_sz - 1; rd_idx++)
+        uint32_t scale = 256 * 1000 * div / (SYS_CLOCK_FREQ / 1000000); // count of ns in one tick, multiplied by 256 to lower the dividing error;
+        for (; rd_idx < data_sz; rd_idx++)
         {
-            register uint16_t last_tick = rx_buf[rd_idx];
-            register uint16_t now_tick = rx_buf[rd_idx + 1];
+            register uint16_t last_tick = buf[rd_idx];
+            register uint16_t now_tick = buf[rd_idx + 1];
             uint32_t delta_tick;
             if (now_tick < last_tick)
-                delta_tick = now_tick + 65536 - last_tick;
+                delta_tick = now_tick + cycle - last_tick;
             else
                 delta_tick = now_tick - last_tick;
             user_buf[rd_idx] = delta_tick * scale / 256;
@@ -392,10 +390,8 @@ int Pwm::serial_read(uint32_t *data, uint32_t sz)
         return rd_idx;
     }
     rd_idx = 0;
-    user_buf = data;
-    user_buf_sz = sz;
-    tim->cval = 0;
-    // tim->ists = 0;
-    restart_dma(dma, rx_buf, sz + 1);
+    user_buf = pulses;
+    rd_sz = sz;
+    restart_dma(dma, sz + 1);
     return 0;
 }
