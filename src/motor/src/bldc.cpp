@@ -31,7 +31,6 @@ static uint32_t voltage_gain = 11;    // the read voltage value divided by volta
 
 /**********************************************************************/
 
-#define MIN_VALID_ERPM 8000
 
 #define ARRAY_CNT(x) (sizeof(x) / sizeof(x[0]))
 
