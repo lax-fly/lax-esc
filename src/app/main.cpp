@@ -110,12 +110,12 @@ int main(void)
 {
     system_init();
     timer = TimerIf::singleton();
-#if !defined(NDEBUG) && DEBUG_PIN != PIN_NONE
+    // test();
+#if !defined(NDEBUG)
+#if DEBUG_PIN != PIN_NONE
     debug_pin = GpioIf::new_instance(DEBUG_PIN);
     debug_pin->set_mode(GpioIf::OUTPUT);
 #endif
-    // test();
-#if !defined(NDEBUG)
     debug_usart = UsartIf::new_instance(PB6, PB7, 256000, 1);
     debug_proto = Protocol::singleton(Protocol::SERIAL, PIN_NONE);
 #endif
@@ -133,7 +133,7 @@ int main(void)
         // else
         {
             motor->poll();
-            proto->poll();
+            // proto->poll();
             print_routine();
         }
 #if !defined(NDEBUG)

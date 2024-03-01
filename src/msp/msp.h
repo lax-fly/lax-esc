@@ -47,6 +47,10 @@ public:
     {
         INPUT = 0,      // to recieve pwm input
         OUTPUT = 1,     // to output pwm, polarity is low(idle high)
+        NORMAL_PWM_OUT = 2,
+        NORMAL_PWM_IN,
+        MULTI_PULSE_IN,
+        MULTI_PULSE_OUT,
     };
     virtual ~PwmIf() {}
     virtual void set_dutycycle(float dutycycle) = 0; // 0.0~1.0

@@ -7,28 +7,45 @@
 class Pwm : public PwmIf
 {
 private:
-    tmr_type *tim;
-    tmr_channel_select_type ch;
-    uint8_t ch_idx;
-    dma_channel_type *dma;
-    uint32_t *ch_dr;
     float dutycycle;
     uint32_t freq;
     uint16_t duty;
     uint32_t cycle;
     uint32_t div;
+    
     uint16_t buf[64];
     int rd_idx;
     uint32_t *user_buf;
     int rd_sz;
-    uint32_t reg_out_cctrl;
-    uint32_t reg_in_cctrl;
-    uint32_t reg_in_cm;
-    uint32_t reg_out_cm;
-    bool using_dma;
+
+    volatile uint32_t *dma_ctrl;
+    volatile uint32_t *dma_paddr;
+    volatile uint32_t *dma_maddr;
+    volatile uint32_t *dma_dtcnt;
+
+    uint32_t pwm_enable;
+    uint32_t pwm_disable;
+    uint32_t pwm_input;
+    uint32_t pwm_output;
+    uint32_t io_dir_mask;
+    uint32_t cctrl_mask;
+    uint32_t coctrl_mask;
+    uint32_t enable_dma_request;
+    uint32_t cctrl_out_value;
+    uint32_t cctrl_in_value;
+    volatile uint32_t *tim_cdt;
+    volatile uint32_t *tim_cctrl;
+    volatile uint32_t *tim_cm;
+    volatile uint32_t *tim_pr;
+    volatile uint32_t *tim_div;
+    volatile uint32_t *tim_cval;
+    volatile uint32_t *tim_iden;
+
+    Mode mode;
     void dma_config();
     void switch2output();
     void switch2input();
+    inline void restart_dma();
 
 public:
     Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma);

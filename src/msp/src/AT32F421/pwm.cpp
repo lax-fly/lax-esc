@@ -59,30 +59,46 @@ PwmIf *PwmIf::new_instance(Pin pin)
 
 void Pwm::dma_config()
 {
-    if (using_dma)
-        return;
-    using_dma = true;
-    // dma config
-    crm_periph_clock_enable(CRM_DMA1_PERIPH_CLOCK, TRUE);
-    dma_init_type dma_init_struct;
-    dma_reset(dma);
-    dma_init_struct.direction = DMA_DIR_MEMORY_TO_PERIPHERAL;
-    dma_init_struct.memory_data_width = DMA_MEMORY_DATA_WIDTH_HALFWORD;
-    dma_init_struct.memory_inc_enable = TRUE;
-    dma_init_struct.peripheral_data_width = DMA_PERIPHERAL_DATA_WIDTH_HALFWORD;
-    dma_init_struct.peripheral_inc_enable = FALSE;
-    dma_init_struct.priority = DMA_PRIORITY_LOW;
-    dma_init_struct.loop_mode_enable = FALSE;
-    dma_init(dma, &dma_init_struct);
-    dma->ctrl_bit.chen = 0; // disable channel
-    dma->paddr = (uint32_t)ch_dr;
-
-    dma->maddr = (uint32_t)buf;
-    tim->iden |= 1 << (9 + ch_idx); // enable tmr's dma request
+    *dma_ctrl &= ~1; // disable channel
+    *dma_paddr = (uint32_t)tim_cdt;
+    *dma_maddr = (uint32_t)buf;
+    *tim_iden |= enable_dma_request; // enable tmr's dma request
 }
 
 Pwm::Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma)
 {
+    uint32_t ch_idx = ch >> 1;
+    this->freq = 0;
+    dma_ctrl = &dma->ctrl;
+    dma_paddr = &dma->paddr;
+    dma_maddr = &dma->maddr;
+    dma_dtcnt = &dma->dtcnt;
+    // map the timer registers
+    tim_cctrl = &tim->cctrl;
+    tim_cdt = &(&tim->c1dt)[ch_idx];
+    tim_pr = &tim->pr;
+    tim_div = &tim->div;
+    tim_cval = &tim->cval;
+    tim_iden = &tim->iden;
+
+    enable_dma_request = 1 << (9 + ch_idx);
+    cctrl_mask = ~(0b1111 << (4 * ch_idx));
+    if (ch_idx < 2)
+    {
+        tim_cm = &tim->cm1;
+        io_dir_mask = ~(0xff << (8 * ch_idx));
+        coctrl_mask = ~(0b111 << (4 + 8 * ch_idx));
+        pwm_enable = TMR_OUTPUT_CONTROL_PWM_MODE_A << (4 + 8 * ch_idx);
+        pwm_disable = TMR_OUTPUT_CONTROL_FORCE_LOW << (4 + 8 * ch_idx);
+    }
+    else
+    {
+        tim_cm = &tim->cm2;
+        io_dir_mask = ~(0xff << (8 * (ch_idx - 2)));
+        coctrl_mask = ~(0b111 << (4 + 8 * (ch_idx - 2)));
+        pwm_enable = TMR_OUTPUT_CONTROL_PWM_MODE_A << (4 + 8 * (ch_idx - 2));
+        pwm_disable = TMR_OUTPUT_CONTROL_FORCE_LOW << (4 + 8 * (ch_idx - 2));
+    }
 
     tmr_output_config_type tmr_output_struct;
 
@@ -93,9 +109,6 @@ Pwm::Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma)
         break;
     case TMR3_BASE:
         crm_periph_clock_enable(CRM_TMR3_PERIPH_CLOCK, TRUE);
-        break;
-    case TMR14_BASE:
-        crm_periph_clock_enable(CRM_TMR14_PERIPH_CLOCK, TRUE);
         break;
     case TMR15_BASE:
         crm_periph_clock_enable(CRM_TMR15_PERIPH_CLOCK, TRUE);
@@ -124,11 +137,8 @@ Pwm::Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma)
     tmr_output_channel_config(tim, ch, &tmr_output_struct);
     tmr_channel_value_set(tim, ch, 0);
     tmr_output_channel_buffer_enable(tim, ch, TRUE);
-    reg_out_cctrl = tim->cctrl & (0b1111 << 4 * (ch / 2));
-    if (ch < TMR_SELECT_CHANNEL_3)
-        reg_out_cm = tim->cm1 & (0xff << 8 * (ch / 2));
-    else
-        reg_out_cm = tim->cm2 & (0xff << 8 * (ch / 2 - 2));
+    cctrl_out_value = *tim_cctrl & ~cctrl_mask;
+    pwm_output = *tim_cm & ~io_dir_mask;
 
     tmr_input_config_type tmr_input_struct;
     tmr_input_struct.input_channel_select = ch;
@@ -136,22 +146,29 @@ Pwm::Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma)
     tmr_input_struct.input_polarity_select = TMR_INPUT_BOTH_EDGE;
     tmr_input_struct.input_filter_value = 0;
     tmr_input_channel_init(tim, &tmr_input_struct, TMR_CHANNEL_INPUT_DIV_1);
-    reg_in_cctrl = tim->cctrl & (0b1111 << 4 * (ch / 2));
-    if (ch < TMR_SELECT_CHANNEL_3)
-        reg_in_cm = tim->cm1 & (0xff << 8 * (ch / 2));
-    else
-        reg_in_cm = tim->cm2 & (0xff << 8 * (ch / 2 - 2));
+    cctrl_in_value = *tim_cctrl & ~cctrl_mask;
+    pwm_input = *tim_cm & ~io_dir_mask;
 
     tmr_output_enable(tim, TRUE);
     tmr_counter_enable(tim, TRUE);
 
-    this->dma = dma;
-    this->tim = tim;
-    this->ch = ch;
-    this->ch_idx = ch >> 1;
-    this->ch_dr = &(&tim->c1dt)[ch_idx];
-    this->freq = 0;
-    this->using_dma = false;
+    // dma config
+    if (dma && !dma->paddr) // check if dma is occupied by checking the peripheral address
+    {
+        crm_periph_clock_enable(CRM_DMA1_PERIPH_CLOCK, TRUE);
+        dma_init_type dma_init_struct;
+        dma_reset(dma);
+        dma_init_struct.direction = DMA_DIR_MEMORY_TO_PERIPHERAL;
+        dma_init_struct.memory_data_width = DMA_MEMORY_DATA_WIDTH_HALFWORD;
+        dma_init_struct.memory_inc_enable = TRUE;
+        dma_init_struct.peripheral_data_width = DMA_PERIPHERAL_DATA_WIDTH_HALFWORD;
+        dma_init_struct.peripheral_inc_enable = FALSE;
+        dma_init_struct.priority = DMA_PRIORITY_LOW;
+        dma_init_struct.loop_mode_enable = FALSE;
+        dma_init(dma, &dma_init_struct);
+    }else
+        dma = nullptr; // set dma to null to cause crash when any attempt to access dma
+
     set_freq(1000);
     set_dutycycle(0);
 
@@ -168,7 +185,7 @@ void Pwm::set_dutycycle(float dutycycle)
     if (__builtin_expect(this->dutycycle == dutycycle, false))
         return;
     this->dutycycle = dutycycle;
-    *ch_dr = dutycycle * cycle;
+    *tim_cdt = dutycycle * cycle;
 }
 
 void Pwm::set_freq(uint32_t freq)
@@ -183,14 +200,14 @@ void Pwm::set_freq(uint32_t freq)
         div <<= 4;   // *16
         cycle >>= 4; // /16
     }
-    tim->div = div - 1;
-    tim->pr = cycle - 1;
-    *ch_dr = dutycycle * cycle;
+    *tim_div = div - 1;
+    *tim_pr = cycle - 1;
+    *tim_cdt = dutycycle * cycle;
 }
 
 uint32_t Pwm::get_duty() const
 {
-    return *ch_dr;
+    return *tim_cdt;
 }
 
 uint32_t Pwm::get_cycle() const
@@ -200,75 +217,38 @@ uint32_t Pwm::get_cycle() const
 
 uint32_t Pwm::get_pos() const
 {
-    return tim->cval;
+    return *tim_cval;
 }
 
 void Pwm::enable()
 {
-    switch (ch)
-    {
-    case TMR_SELECT_CHANNEL_1:
-        tim->cm1_output_bit.c1octrl = TMR_OUTPUT_CONTROL_PWM_MODE_A;
-        break;
-    case TMR_SELECT_CHANNEL_2:
-        tim->cm1_output_bit.c2octrl = TMR_OUTPUT_CONTROL_PWM_MODE_A;
-        break;
-    case TMR_SELECT_CHANNEL_3:
-        tim->cm2_output_bit.c3octrl = TMR_OUTPUT_CONTROL_PWM_MODE_A;
-        break;
-    case TMR_SELECT_CHANNEL_4:
-        tim->cm2_output_bit.c4octrl = TMR_OUTPUT_CONTROL_PWM_MODE_A;
-        break;
-    default:
-        assert(false);
-        break;
-    }
+    uint32_t tmp = *tim_cm;
+    tmp &= coctrl_mask;
+    tmp |= pwm_enable;
+    *tim_cm = tmp;
 }
 
 void Pwm::disable()
 { // when pwm is disabled, the output pin must bo forced low
-    switch (ch)
-    {
-    case TMR_SELECT_CHANNEL_1:
-        tim->cm1_output_bit.c1octrl = TMR_OUTPUT_CONTROL_FORCE_LOW;
-        break;
-    case TMR_SELECT_CHANNEL_2:
-        tim->cm1_output_bit.c2octrl = TMR_OUTPUT_CONTROL_FORCE_LOW;
-        break;
-    case TMR_SELECT_CHANNEL_3:
-        tim->cm2_output_bit.c3octrl = TMR_OUTPUT_CONTROL_FORCE_LOW;
-        break;
-    case TMR_SELECT_CHANNEL_4:
-        tim->cm2_output_bit.c4octrl = TMR_OUTPUT_CONTROL_FORCE_LOW;
-        break;
-    default:
-        assert(false);
-        break;
-    }
+    uint32_t tmp = *tim_cm;
+    tmp &= coctrl_mask;
+    tmp |= pwm_disable;
+    *tim_cm = tmp;
 }
 
 void Pwm::switch2output() // about 1us
 {
-    tim->cctrl &= ~(0b1111 << 4 * ch_idx);
-    *ch_dr = 0;  // will be loaded at the start of next period for we enabled channel output data buffer, so the next code line is necessary
-    tim->pr = 1; // force to overflow to make the channel reg load ch_dr(0) in one clock to avoid a unexpected pulse
+    *tim_cctrl &= cctrl_mask;
+    *tim_cdt = 0; // will be loaded at the start of next period for we enabled channel output data buffer, so the next code line is necessary
+    *tim_pr = 1;  // force to overflow to make the channel reg load tim_cdt(0) in one clock to avoid a unexpected pulse
 
-    if (ch < TMR_SELECT_CHANNEL_3)
-    {
-        uint32_t cm = tim->cm2;
-        cm &= ~(0xff << 8 * ch_idx);
-        cm |= reg_out_cm;
-        tim->cm1 = cm;
-    }
-    else
-    {
-        uint32_t cm = tim->cm2;
-        cm &= ~(0xff << 8 * (ch_idx - 2));
-        cm |= reg_out_cm;
-        tim->cm2 = cm;
-    }
-    tim->pr = cycle - 1;
-    tim->cctrl |= reg_out_cctrl;
+    uint32_t tmp = *tim_cm;
+    tmp &= io_dir_mask;
+    tmp |= pwm_output;
+    *tim_cm = tmp;
+
+    *tim_pr = cycle - 1;
+    *tim_cctrl |= cctrl_out_value;
 
     // uint32_t tmp = dma->ctrl;
     // tmp &= 0xbfee; // lsb is channel enable bit, disable it first
@@ -278,23 +258,15 @@ void Pwm::switch2output() // about 1us
 
 void Pwm::switch2input()
 {
-    tim->cctrl &= ~(0b1111 << 4 * ch_idx);
-    tim->pr = 65535;
-    if (ch < TMR_SELECT_CHANNEL_3)
-    {
-        uint32_t cm = tim->cm1;
-        cm &= ~(0xff << 8 * ch_idx);
-        cm |= reg_in_cm;
-        tim->cm1 = cm;
-    }
-    else
-    {
-        uint32_t cm = tim->cm2;
-        cm &= ~(0xff << 8 * (ch_idx - 2));
-        cm |= reg_in_cm;
-        tim->cm2 = cm;
-    }
-    tim->cctrl |= reg_in_cctrl;
+    *tim_cctrl &= cctrl_mask;
+    *tim_pr = 65535;
+
+    uint32_t tmp = *tim_cm;
+    tmp &= io_dir_mask;
+    tmp |= pwm_input;
+    *tim_cm = tmp;
+
+    *tim_cctrl |= cctrl_in_value;
 
     // uint32_t tmp = dma->ctrl;
     // tmp &= 0xbfee;
@@ -327,9 +299,12 @@ void Pwm::set_mode(PwmIf::Mode mode)
 
 int Pwm::send_pulses(const uint32_t *pulses, uint32_t sz)
 {
+    if (mode != OUTPUT)
+    {
+    }
     assert(sz < BUF_SIZE);
     if (!pulses)
-        return dma->dtcnt;
+        return *dma_dtcnt;
 
     uint32_t i = 0;
     uint32_t scale = 1000 * div;
@@ -339,27 +314,25 @@ int Pwm::send_pulses(const uint32_t *pulses, uint32_t sz)
         buf[i] = ticks;
     }
     buf[i] = 0;
-    dma->ctrl_bit.chen = 0;
-    dma->dtcnt = sz + 1;
-    dma->ctrl_bit.chen = 1;
+    *dma_ctrl &= ~1; // disable dma channel
+    *dma_dtcnt = sz + 1;
+    *dma_ctrl |= 1; // enable dma channel
     return 0;
 }
 
 #pragma GCC push_options
 #pragma GCC optimize("O0")
-static inline void restart_dma(dma_channel_type *dma, uint32_t sz)
+inline void Pwm::restart_dma()
 {
-    volatile uint32_t &ctrl = dma->ctrl;
-    volatile uint32_t &dtcnt = dma->dtcnt;
-    register uint32_t tmp = ctrl;
+    register uint32_t tmp = *dma_ctrl;
     register uint32_t disable_dma = tmp & ~1; // unset dma enable bit
     register uint32_t enable_dma = tmp | 1;   // set dma enable bit
-    ctrl = disable_dma;
-    dtcnt = sz;
-    ctrl = enable_dma;
-    ctrl = disable_dma; // first restart to clear the last cached DMA event, which is not expected, it may be at32's bug
-    dtcnt = sz;
-    ctrl = enable_dma;
+    *dma_ctrl = disable_dma;
+    *dma_dtcnt = rd_sz + 1;
+    *dma_ctrl = enable_dma;
+    *dma_ctrl = disable_dma; // first restart to clear the last cached DMA event, which is not expected, it may be at32's bug
+    *dma_dtcnt = rd_sz + 1;
+    *dma_ctrl = enable_dma;
 }
 #pragma GCC pop_options
 
@@ -371,7 +344,7 @@ int Pwm::recv_pulses(uint32_t *pulses, uint32_t sz)
     {
         if (__builtin_expect(!user_buf, 0))
             return 0;
-        int data_sz = rd_sz - (int)dma->dtcnt;
+        int data_sz = rd_sz - (int)*dma_dtcnt;
         if (rd_idx >= data_sz)
             return rd_idx; // no new data
 
@@ -392,7 +365,7 @@ int Pwm::recv_pulses(uint32_t *pulses, uint32_t sz)
     rd_idx = 0;
     user_buf = pulses;
     rd_sz = sz;
-    restart_dma(dma, sz + 1);
+    restart_dma();
     return 0;
 }
 

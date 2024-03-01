@@ -25,10 +25,9 @@ usart_t usart_map[] = {
 
 static volatile uint8_t rx_head, rx_tail;
 
-static void dma_buffer_config(dma_channel_type *dmax_channely, uint32_t peripheral_base_addr, uint32_t memory_base_addr, uint16_t buffer_size)
+static void dma_buffer_config(dma_channel_type *dmax_channely, uint32_t memory_base_addr, uint16_t buffer_size)
 {
     dmax_channely->dtcnt = buffer_size;
-    dmax_channely->paddr = peripheral_base_addr;
     dmax_channely->maddr = memory_base_addr;
 }
 
@@ -158,6 +157,8 @@ UsartIf *UsartIf::new_instance(Pin tx_pin, Pin rx_pin, uint32_t baud, float stop
 
     usart_config(&usart_map[iter], baud, mode, stopbit);
     dma_config(&usart_map[iter]);
+    usart_map[iter].tx.dma_channel->paddr = (uint32_t)&usart_map[iter].regs->dt;
+    usart_map[iter].rx.dma_channel->paddr = (uint32_t)&usart_map[iter].regs->dt;
     return new Usart(&usart_map[iter]);
 }
 
@@ -168,7 +169,7 @@ int Usart::async_send(const uint8_t *data, int dsz)
     if (!data)
         return dsz - dma->dtcnt;
     dma->ctrl_bit.chen = 0;
-    dma_buffer_config(dma, (uint32_t)&handle->regs->dt, (uint32_t)data, dsz);
+    dma_buffer_config(dma, (uint32_t)data, dsz);
     dma->ctrl_bit.chen = 1;
     return 0;
 }
@@ -191,7 +192,7 @@ int Usart::async_recv(uint8_t *buf, int bsz)
         return bsz - dma->dtcnt;
 
     dma->ctrl_bit.chen = 0;
-    dma_buffer_config(dma, (uint32_t)&handle->regs->dt, (uint32_t)buf, bsz);
+    dma_buffer_config(dma, (uint32_t)buf, bsz);
     dma->ctrl_bit.chen = 1;
     return 0;
 }
