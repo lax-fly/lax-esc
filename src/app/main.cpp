@@ -33,15 +33,21 @@ uint32_t dshot_bits;
 Protocol::Type proto_type;
 uint32_t throttle;
 
+#define PRINT_RPM 1
+#define PRINT_DSHOT_DATA 2
+#define PRINT_PROTO 3
+#define PRINT_DEBUG PRINT_PROTO
 void print_routine()
 {
     static uint32_t run_time = 0;
     if (run_time < timer->now_ms())
     {
         run_time = timer->now_ms() + 500;
-        // printf("rpm: %d cur:%lu\n", motor->get_rpm(), motor->get_current());
-        // printf("%lu \n", dshot_bits);
-        // if (proto_type != Protocol::BRUSHED){
+#if PRINT_DEBUG == PRINT_RPM
+        printf("rpm: %d cur:%lu\n", motor->get_rpm(), motor->get_current());
+#elif PRINT_DEBUG == PRINT_DSHOT_DATA
+        printf("%lu \n", dshot_bits);
+#elif PRINT_DEBUG == PRINT_PROTO
         switch (proto_type)
         {
         case Protocol::SERIAL:
@@ -67,24 +73,26 @@ void print_routine()
             printf("NONE\n");
             break;
         }
+#endif
     }
 }
 
-void test(void)
-{
-    // PwmIf* pwm = PwmIf::new_instance(PA6);
-    // pwm->set_mode(PwmIf::OUTPUT);
-    // pwm->set_freq(1800);
-    // // pwm->set_dutycycle(0.5f);
-    // uint32_t pulses[] = {500000, 300000, 10000, 1000};
-    // while (1)
-    // {
-    //     timer->delay_ms(10);
-    //     pwm->send_pulses(pulses, 4);
-    // }
+#define PWM_TEST 0
 
+void pwm_test(void)
+{
+#if PWM_TEST_TX == 1
     PwmIf *pwm = PwmIf::new_instance(PA6);
-    pwm->set_mode(PwmIf::INPUT);
+    pwm->set_freq(1800);
+    // pwm->set_dutycycle(0.5f);
+    uint32_t pulses[] = {500000, 300000, 10000, 1000};
+    while (1)
+    {
+        timer->delay_ms(10);
+        pwm->send_pulses(pulses, 4);
+    }
+#elif PWM_TEST == 2
+    PwmIf *pwm = PwmIf::new_instance(PA6);
     pwm->set_freq(2000);
     uint32_t pulses[32];
     while (1)
@@ -104,13 +112,13 @@ void test(void)
             printf("%s", buf);
         }
     }
+#endif
 }
 bool armed = false;
 int main(void)
 {
     system_init();
     timer = TimerIf::singleton();
-    // test();
 #if !defined(NDEBUG)
 #if DEBUG_PIN != PIN_NONE
     debug_pin = GpioIf::new_instance(DEBUG_PIN);
@@ -120,24 +128,28 @@ int main(void)
     debug_proto = Protocol::singleton(Protocol::SERIAL, PIN_NONE);
 #endif
     motor = MotorIf::singleton(MotorIf::BLDC);
+#if PWM_TEST > 0
+    pwm_test();
+#endif
+    proto = Protocol::singleton(Protocol::AUTO_DETECT, PA6);
     sound = new Sound(motor);
     sound->power_on_tone();
     while (1) // don't make one loop take more than 10us
     {
-        // if (__builtin_expect(!armed, false))
-        // {
-        //     proto_type = Protocol::auto_detect(PA6);
-        //     // if (proto_type != Protocol::AUTO_DETECT)
-        //     //     sound->throttle_signal_detected_tone();
-        // }
-        // else
+        if (__builtin_expect(!armed, false))
+        {
+            proto_type = Protocol::auto_detect(PA6);
+            // if (proto_type != Protocol::AUTO_DETECT)
+            //     sound->throttle_signal_detected_tone();
+        }
+        else
         {
             motor->poll();
-            // proto->poll();
-            print_routine();
+            proto->poll();
         }
 #if !defined(NDEBUG)
         debug_proto->poll();
+        print_routine();
 #endif
     }
 }

@@ -8,13 +8,20 @@
 static Serial *serial = nullptr;
 static Dshot *dshot = nullptr;
 
+static void reset_protocol(void)
+{
+    if (dshot)
+        dshot->release();
+}
+
 Protocol::Type Protocol::auto_detect(Pin pin)
 {
     static Protocol::Type type = AUTO_DETECT;
     TimerIf *timer = TimerIf::singleton();
     uint32_t pulses[64] = {0};
+    if (type == AUTO_DETECT)
+        reset_protocol();
     PwmIf *pwm = PwmIf::new_instance(pin);
-    pwm->set_mode(PwmIf::INPUT);
     pwm->set_freq(250); // measuring range: 4ms
     while (1)
     {
@@ -97,9 +104,11 @@ Protocol *Protocol::singleton(Type type, Pin pin)
         return serial = new Serial();
         break;
     case DSHOT:
-        if (dshot)
-            return dshot;
-        return dshot = new Dshot();
+        if (!dshot)
+            dshot = new Dshot();
+        dshot->release();
+        dshot->bind(pin);
+        return dshot;
     case BRUSHED:
         break;
     case STD_PWM:

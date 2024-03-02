@@ -6,9 +6,11 @@
 class Dshot : public Protocol
 {
 private:
-
 public:
     Dshot();
     virtual ~Dshot();
     virtual void poll(void);
+
+    void bind(Pin pin);
+    void release(void);
 };

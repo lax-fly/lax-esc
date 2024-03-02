@@ -124,7 +124,7 @@ ASFLAGS = $(MCU) $(AS_DEFS) $(AS_INCLUDES) $(OPT) -Wall -fdata-sections -ffuncti
 CFLAGS += $(MCU) $(C_DEFS) $(OPT) -Wall -fdata-sections -ffunction-sections -D$(BOARD)
 
 ifeq ($(DEBUG), 1)
-CFLAGS += -O0 -g -gdwarf-2
+CFLAGS += -Og -g -gdwarf-2
 else
 CFLAGS += -O3 -DNDEBUG
 endif

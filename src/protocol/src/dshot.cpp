@@ -103,10 +103,7 @@ static uint32_t encode2dshot_bits(uint32_t data);
 Dshot::Dshot()
 {
     timer = TimerIf::singleton();
-    // GpioIf *io = GpioIf::new_instance(PA9);
-    pwm = PwmIf::new_instance(SIGNAL_IN_PIN);
-    pwm->set_mode(PwmIf::INPUT);
-    pwm->set_freq(2000);
+    pwm = nullptr;
     run_time = 0;
     state = RECEIVE;
     resp_time = 0;
@@ -116,10 +113,22 @@ Dshot::Dshot()
     restart();
 }
 
+void Dshot::bind(Pin pin)
+{
+    pwm = PwmIf::new_instance(pin);
+    pwm->set_freq(2000);
+    pwm->set_polarity(0);
+}
+
+void Dshot::release(void)
+{
+    delete pwm;
+    pwm = nullptr;
+}
+
 Dshot::~Dshot()
 {
-    if (pwm)
-        delete pwm;
+    delete pwm;
 }
 
 void restart(void)
@@ -339,7 +348,6 @@ uint32_t encode2dshot_bits(uint32_t data)
 void send_package(void)
 {
     state = TO_SEND;
-    pwm->set_mode(PwmIf::OUTPUT);
 
     uint32_t data = 0;
     data = encode2dshot_bits(send_value);
@@ -462,13 +470,14 @@ void send_dealing()
     if (pwm->send_pulses() == 0)
     {
         state = RECEIVE;
-        pwm->set_mode(PwmIf::INPUT);
         restart();
     }
 }
 
 void Dshot::poll(void)
 {
+    if (!pwm)
+        return;
     now_us = timer->now_us();
     if (run_time > now_us)
         return;

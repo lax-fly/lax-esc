@@ -57,22 +57,9 @@ PwmIf *PwmIf::new_instance(Pin pin)
     return new_pwm;
 }
 
-void Pwm::dma_config()
-{
-    *dma_ctrl &= ~1; // disable channel
-    *dma_paddr = (uint32_t)tim_cdt;
-    *dma_maddr = (uint32_t)buf;
-    *tim_iden |= enable_dma_request; // enable tmr's dma request
-}
-
-Pwm::Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma)
+inline void Pwm::tim_config(tmr_type *tim, tmr_channel_select_type ch)
 {
     uint32_t ch_idx = ch >> 1;
-    this->freq = 0;
-    dma_ctrl = &dma->ctrl;
-    dma_paddr = &dma->paddr;
-    dma_maddr = &dma->maddr;
-    dma_dtcnt = &dma->dtcnt;
     // map the timer registers
     tim_cctrl = &tim->cctrl;
     tim_cdt = &(&tim->c1dt)[ch_idx];
@@ -137,7 +124,9 @@ Pwm::Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma)
     tmr_output_channel_config(tim, ch, &tmr_output_struct);
     tmr_channel_value_set(tim, ch, 0);
     tmr_output_channel_buffer_enable(tim, ch, TRUE);
-    cctrl_out_value = *tim_cctrl & ~cctrl_mask;
+    cctrl_out_high_value = *tim_cctrl & ~cctrl_mask;
+    cctrl_out_low_value = cctrl_out_high_value | (TMR_OUTPUT_ACTIVE_LOW << (ch_idx * 4 + 1));
+    cctrl_out_value = cctrl_out_high_value;
     pwm_output = *tim_cm & ~io_dir_mask;
 
     tmr_input_config_type tmr_input_struct;
@@ -151,23 +140,43 @@ Pwm::Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma)
 
     tmr_output_enable(tim, TRUE);
     tmr_counter_enable(tim, TRUE);
+}
 
+inline void Pwm::dma_config(dma_channel_type *dma)
+{
     // dma config
-    if (dma && !dma->paddr) // check if dma is occupied by checking the peripheral address
-    {
-        crm_periph_clock_enable(CRM_DMA1_PERIPH_CLOCK, TRUE);
-        dma_init_type dma_init_struct;
-        dma_reset(dma);
-        dma_init_struct.direction = DMA_DIR_MEMORY_TO_PERIPHERAL;
-        dma_init_struct.memory_data_width = DMA_MEMORY_DATA_WIDTH_HALFWORD;
-        dma_init_struct.memory_inc_enable = TRUE;
-        dma_init_struct.peripheral_data_width = DMA_PERIPHERAL_DATA_WIDTH_HALFWORD;
-        dma_init_struct.peripheral_inc_enable = FALSE;
-        dma_init_struct.priority = DMA_PRIORITY_LOW;
-        dma_init_struct.loop_mode_enable = FALSE;
-        dma_init(dma, &dma_init_struct);
-    }else
-        dma = nullptr; // set dma to null to cause crash when any attempt to access dma
+    dma_ctrl = nullptr;
+    if (!dma || dma->paddr) // check if dma is occupied by checking the peripheral address
+        return;
+
+    dma_ctrl = &dma->ctrl;
+    dma_paddr = &dma->paddr;
+    dma_maddr = &dma->maddr;
+    dma_dtcnt = &dma->dtcnt;
+
+    crm_periph_clock_enable(CRM_DMA1_PERIPH_CLOCK, TRUE);
+    dma->ctrl &= 0xbfee;
+    dma->ctrl |= DMA_DIR_MEMORY_TO_PERIPHERAL;
+    dma->ctrl_bit.chpl = DMA_PRIORITY_LOW;
+    dma->ctrl_bit.mwidth = DMA_MEMORY_DATA_WIDTH_HALFWORD;
+    dma->ctrl_bit.pwidth = DMA_PERIPHERAL_DATA_WIDTH_HALFWORD;
+    dma->ctrl_bit.mincm = TRUE;
+    dma->ctrl_bit.pincm = FALSE;
+    dma->ctrl_bit.lm = FALSE;
+    *dma_paddr = (uint32_t)tim_cdt;
+    *dma_maddr = (uint32_t)buf;
+    *tim_iden |= enable_dma_request; // enable tmr's dma request
+    dma_m2p = *dma_ctrl;
+    dma_p2m = (dma_m2p & 0xbfee) | DMA_DIR_PERIPHERAL_TO_MEMORY;
+}
+
+Pwm::Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma)
+{
+    freq = 0;
+    mode = OUTPUT;
+
+    tim_config(tim, ch);
+    dma_config(dma);
 
     set_freq(1000);
     set_dutycycle(0);
@@ -177,6 +186,16 @@ Pwm::Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma)
 
 Pwm::~Pwm()
 {
+    // release dma
+    if (dma_ctrl)
+    {
+        *dma_ctrl = 0;
+        *dma_paddr = 0;
+        *dma_maddr = 0;
+        *dma_dtcnt = 0;
+        // release tim
+        *tim_iden &= ~enable_dma_request;
+    }
 }
 
 // dutycycle 0.0000 ~ 1.0
@@ -250,16 +269,13 @@ void Pwm::switch2output() // about 1us
     *tim_pr = cycle - 1;
     *tim_cctrl |= cctrl_out_value;
 
-    // uint32_t tmp = dma->ctrl;
-    // tmp &= 0xbfee; // lsb is channel enable bit, disable it first
-    // tmp |= DMA_DIR_MEMORY_TO_PERIPHERAL;
-    // dma->ctrl = tmp;
+    if (dma_ctrl)
+        *dma_ctrl = dma_m2p;
 }
 
 void Pwm::switch2input()
 {
     *tim_cctrl &= cctrl_mask;
-    *tim_pr = 65535;
 
     uint32_t tmp = *tim_cm;
     tmp &= io_dir_mask;
@@ -268,41 +284,19 @@ void Pwm::switch2input()
 
     *tim_cctrl |= cctrl_in_value;
 
-    // uint32_t tmp = dma->ctrl;
-    // tmp &= 0xbfee;
-    // // tmp |= DMA_DIR_PERIPHERAL_TO_MEMORY; // no need for DMA_DIR_PERIPHERAL_TO_MEMORY = 0
-    // dma->ctrl = tmp;
-    // user_buf = nullptr;
-}
-
-void Pwm::set_mode(PwmIf::Mode mode)
-{
-    switch (mode)
-    {
-    case PwmIf::INPUT:
-    {
-        dma_config();
-        switch2input();
-        break;
-    }
-    case PwmIf::OUTPUT:
-    {
-        dma_config();
-        switch2output();
-        break;
-    }
-    default:
-        assert(false);
-        break;
-    }
+    if (dma_ctrl)
+        *dma_ctrl = dma_p2m;
 }
 
 int Pwm::send_pulses(const uint32_t *pulses, uint32_t sz)
 {
+    assert(sz < BUF_SIZE);
     if (mode != OUTPUT)
     {
+        mode = OUTPUT;
+        switch2output();
     }
-    assert(sz < BUF_SIZE);
+
     if (!pulses)
         return *dma_dtcnt;
 
@@ -324,6 +318,8 @@ int Pwm::send_pulses(const uint32_t *pulses, uint32_t sz)
 #pragma GCC optimize("O0")
 inline void Pwm::restart_dma()
 {
+    if (!dma_ctrl)
+        return;
     register uint32_t tmp = *dma_ctrl;
     register uint32_t disable_dma = tmp & ~1; // unset dma enable bit
     register uint32_t enable_dma = tmp | 1;   // set dma enable bit
@@ -339,6 +335,12 @@ inline void Pwm::restart_dma()
 int Pwm::recv_pulses(uint32_t *pulses, uint32_t sz)
 { // support max frame length 500us, which is far more enough for dshot150 to dshot 1200
     assert(sz < BUF_SIZE);
+
+    if (mode != INPUT)
+    {
+        mode = INPUT;
+        switch2input();
+    }
 
     if (__builtin_expect(pulses == nullptr, true))
     {
@@ -373,6 +375,15 @@ uint32_t high_pulse;
 
 int Pwm::recv_high_pulse()
 {
+    return 0;
+}
+
+void Pwm::set_polarity(int edge)
+{
+    if (edge > 0)
+        cctrl_out_value = cctrl_out_high_value;
+    else
+        cctrl_out_value = cctrl_out_low_value;
 }
 
 void TMR3_GLOBAL_IRQHandler(void)

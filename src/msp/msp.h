@@ -43,15 +43,6 @@ enum Pin
 class PwmIf
 {
 public:
-    enum Mode
-    {
-        INPUT = 0,      // to recieve pwm input
-        OUTPUT = 1,     // to output pwm, polarity is low(idle high)
-        NORMAL_PWM_OUT = 2,
-        NORMAL_PWM_IN,
-        MULTI_PULSE_IN,
-        MULTI_PULSE_OUT,
-    };
     virtual ~PwmIf() {}
     virtual void set_dutycycle(float dutycycle) = 0; // 0.0~1.0
     /**
@@ -66,12 +57,9 @@ public:
     virtual uint32_t get_cycle() const = 0; // return the pwm cycle length, unit insensitive(normally the timer tick count)
     virtual uint32_t get_pos() const = 0;   // return the current pwm output position in the cycle, unit insensitive(normally the timer tick count)
     /**
-     * @brief set the pwm mode, a pwm object is default OUTPUT mode once created
-     * when SERIAL is set, send_pulses and read_digital functions can now be used.
-     * before using send_pulses, call set_mode(OUTPUT), polarity is fixed to low
-     * before using read_digital, call set_mode(INPUT)
+     *  @brief for output only, set the output polarity, edge > 0: high, edge <= 0: low
      */
-    virtual void set_mode(Mode mode) = 0;
+    virtual void set_polarity(int edge = 1) = 0;
     /**
      *  @brief write a array of pulse in ns to the output, set pulses to null to check if last write is finished
      * if last write is finished, return 0, or return -1. send_pulses is asynchronous.
