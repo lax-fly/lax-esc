@@ -110,7 +110,6 @@ Dshot::Dshot()
     adc_temp = AdcIf::new_instance(PIN_MAX);
     adc_volt = AdcIf::new_instance(ADC_BAT_PIN);
     adc_curr = AdcIf::new_instance(ADC_CUR_PIN);
-    restart();
 }
 
 void Dshot::bind(Pin pin)
@@ -118,6 +117,7 @@ void Dshot::bind(Pin pin)
     pwm = PwmIf::new_instance(pin);
     pwm->set_freq(2000);
     pwm->set_polarity(0);
+    restart();
 }
 
 void Dshot::release(void)

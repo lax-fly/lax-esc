@@ -316,24 +316,37 @@ void tmr_output_channel_config(tmr_type *tmr_x, tmr_channel_select_type tmr_chan
   switch(channel)
   {
     case TMR_SELECT_CHANNEL_1:
+      tmr_x->cctrl_bit.c1en       = FALSE;
       tmr_x->cm1_output_bit.c1octrl = tmr_output_struct->oc_mode;
+      tmr_x->cm1_output_bit.c1c = 0;
+      tmr_x->cctrl_bit.c1en       = TRUE;
       break;
 
     case TMR_SELECT_CHANNEL_2:
+      tmr_x->cctrl_bit.c2en       = FALSE;
       tmr_x->cm1_output_bit.c2octrl = tmr_output_struct->oc_mode;
+      tmr_x->cm1_output_bit.c2c = 0;
+      tmr_x->cctrl_bit.c2en       = TRUE;
       break;
 
     case TMR_SELECT_CHANNEL_3:
+      tmr_x->cctrl_bit.c3en       = FALSE;
       tmr_x->cm2_output_bit.c3octrl = tmr_output_struct->oc_mode;
+      tmr_x->cm2_output_bit.c3c = 0;
+      tmr_x->cctrl_bit.c3en       = TRUE;
       break;
 
     case TMR_SELECT_CHANNEL_4:
+      tmr_x->cctrl_bit.c4en       = FALSE;
       tmr_x->cm2_output_bit.c4octrl = tmr_output_struct->oc_mode;
+      tmr_x->cm2_output_bit.c4c = 0;
+      tmr_x->cctrl_bit.c4en       = TRUE;
       break;
 
     default:
       break;
   }
+  tmr_x->cctrl_bit.c1en       = TRUE;
 
   chx_offset = ((tmr_channel * 2) + 1);
   chcx_offset = ((tmr_channel * 2) + 3);
