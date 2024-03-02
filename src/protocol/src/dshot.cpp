@@ -87,6 +87,7 @@ static uint32_t send_current_time = 300;
 static uint32_t send_voltage_time = 600;
 
 static uint16_t send_value = 0;
+static uint32_t timeout = 0;
 extern uint32_t dshot_bits;
 
 AdcIf *adc_temp;
@@ -263,6 +264,7 @@ void proccess(void)
         period45 = period * 4 / 5;
         freq = 1000000000 / period;
         freq54 = freq * 5 / 4;
+        pwm->set_freq(freq54);
     }
     else
     {
@@ -292,7 +294,6 @@ void proccess(void)
         dshot_process(dshot_bits >> 4);
         send_telemetry();
     }
-    restart();
 }
 
 const char gcr_table[16] = {
@@ -353,7 +354,6 @@ void send_package(void)
     data = encode2dshot_bits(send_value);
 
     data <<= 32 - 21;
-    pwm->set_freq(freq54);
     uint32_t pulse1 = 0;
     uint32_t pulse0 = period45;
     for (uint32_t i = 0; i < 21; i++)
@@ -450,9 +450,11 @@ void receive_dealing()
     if (rd_sz == ::rd_sz)
     { // no byte received over 20us, so restart frame
         restart();
+        timeout++;
         return;
     }
     ::rd_sz = rd_sz;
+    timeout = 0;
 }
 
 void send_dealing()
@@ -481,7 +483,7 @@ void Dshot::poll(void)
     now_us = timer->now_us();
     if (run_time > now_us)
         return;
-    run_time += 5;
+    run_time += 6;  // 6us, the max dshot bit length for 150kHz
 
     if (state != RECEIVE)
         send_dealing();
@@ -490,4 +492,9 @@ void Dshot::poll(void)
         scheduling_telemetry();
         receive_dealing();
     }
+}
+
+bool Dshot::signal_lost()
+{
+    return (timeout > 100000);
 }

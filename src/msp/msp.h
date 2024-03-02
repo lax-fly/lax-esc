@@ -46,9 +46,9 @@ public:
     virtual ~PwmIf() {}
     virtual void set_dutycycle(float dutycycle) = 0; // 0.0~1.0
     /**
-     * @brief set frequency, valid range: 10Hz~100kHz
-     * when in pwm INPUT mode, this is used to scale the measuring range, alse scales the value in data of recv_pulses and its accuracy
-     * when in pwm OUTPUT mode, this is used to scale the output frequency range(to smaller), (1k~50k)/scale
+     * @brief set frequency, valid range: 1Hz~10MHz
+     * when in pwm INPUT mode, this can set the measuring pulse range(max pulse 1/freq),
+     * the larger range, the lower accuracy, whatever, the accuracy should be less than 1/freq/4000
      */
     virtual void set_freq(uint32_t freq) = 0;
     virtual void enable() = 0;
@@ -67,11 +67,11 @@ public:
      *  use set_freq to grow this range. note, the wider range, the lower accuracy
      *  for example, if you set_freq(1000), the period will be 1/1000 = 1ms, so the range will be 0~1ms
      */
-    virtual int send_pulses(const uint32_t *pulses = 0, uint32_t sz = 0) = 0; //
+    virtual int send_pulses(const uint32_t *pulses = 0, uint32_t sz = 0) = 0;
     /**
      * @brief measuring the input pulses, |```|___| is treated as two pulses(up pulse and down pulse)，
      *        notice that the recv_pulses don't care about the pulse direction but the pulse width, pulse width must be in unit ns,
-     *        the accuracy granularity must be lower than 1/freq/4000, where the 'freq' is set by set_freq
+     *        the accuracy granularity must be less than 1/freq/4000, where the 'freq' is set by set_freq
      * @return currently received pulses
      */
     virtual int recv_pulses(uint32_t *pulses = 0, uint32_t sz = 0) = 0;

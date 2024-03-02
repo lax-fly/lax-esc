@@ -87,8 +87,6 @@ inline void Pwm::tim_config(tmr_type *tim, tmr_channel_select_type ch)
         pwm_disable = TMR_OUTPUT_CONTROL_FORCE_LOW << (4 + 8 * (ch_idx - 2));
     }
 
-    tmr_output_config_type tmr_output_struct;
-
     switch ((uint32_t)tim)
     {
     case TMR1_BASE:
@@ -114,6 +112,16 @@ inline void Pwm::tim_config(tmr_type *tim, tmr_channel_select_type ch)
     tmr_primary_mode_select(tim, TMR_PRIMARY_SEL_RESET);
     tmr_overflow_request_source_set(tim, FALSE);
 
+    tmr_input_config_type tmr_input_struct;
+    tmr_input_struct.input_channel_select = ch;
+    tmr_input_struct.input_mapped_select = TMR_CC_CHANNEL_MAPPED_DIRECT;
+    tmr_input_struct.input_polarity_select = TMR_INPUT_BOTH_EDGE;
+    tmr_input_struct.input_filter_value = 0;
+    tmr_input_channel_init(tim, &tmr_input_struct, TMR_CHANNEL_INPUT_DIV_1);
+    cctrl_in_value = *tim_cctrl & ~cctrl_mask;
+    pwm_input = *tim_cm & ~io_dir_mask;
+
+    tmr_output_config_type tmr_output_struct;
     tmr_output_struct.oc_mode = TMR_OUTPUT_CONTROL_PWM_MODE_A;
     tmr_output_struct.oc_output_state = TRUE;
     tmr_output_struct.occ_output_state = FALSE;
@@ -128,15 +136,6 @@ inline void Pwm::tim_config(tmr_type *tim, tmr_channel_select_type ch)
     cctrl_out_low_value = cctrl_out_high_value | (TMR_OUTPUT_ACTIVE_LOW << (ch_idx * 4 + 1));
     cctrl_out_value = cctrl_out_high_value;
     pwm_output = *tim_cm & ~io_dir_mask;
-
-    tmr_input_config_type tmr_input_struct;
-    tmr_input_struct.input_channel_select = ch;
-    tmr_input_struct.input_mapped_select = TMR_CC_CHANNEL_MAPPED_DIRECT;
-    tmr_input_struct.input_polarity_select = TMR_INPUT_BOTH_EDGE;
-    tmr_input_struct.input_filter_value = 0;
-    tmr_input_channel_init(tim, &tmr_input_struct, TMR_CHANNEL_INPUT_DIV_1);
-    cctrl_in_value = *tim_cctrl & ~cctrl_mask;
-    pwm_input = *tim_cm & ~io_dir_mask;
 
     tmr_output_enable(tim, TRUE);
     tmr_counter_enable(tim, TRUE);
@@ -165,23 +164,21 @@ inline void Pwm::dma_config(dma_channel_type *dma)
     dma->ctrl_bit.lm = FALSE;
     *dma_paddr = (uint32_t)tim_cdt;
     *dma_maddr = (uint32_t)buf;
-    *tim_iden |= enable_dma_request; // enable tmr's dma request
     dma_m2p = *dma_ctrl;
     dma_p2m = (dma_m2p & 0xbfee) | DMA_DIR_PERIPHERAL_TO_MEMORY;
+    *tim_iden |= enable_dma_request; // enable tmr's dma request
 }
 
 Pwm::Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma)
 {
     freq = 0;
-    mode = OUTPUT;
+    mode = OUTPUT; // OUTPUT default
 
     tim_config(tim, ch);
     dma_config(dma);
 
     set_freq(1000);
     set_dutycycle(0);
-
-    switch2output(); // OUTPUT default
 }
 
 Pwm::~Pwm()
@@ -193,9 +190,11 @@ Pwm::~Pwm()
         *dma_paddr = 0;
         *dma_maddr = 0;
         *dma_dtcnt = 0;
-        // release tim
-        *tim_iden &= ~enable_dma_request;
     }
+    // release tim
+    *tim_iden &= ~enable_dma_request;
+    *tim_cctrl &= cctrl_mask;
+    *tim_div = 0;
 }
 
 // dutycycle 0.0000 ~ 1.0
@@ -219,7 +218,7 @@ void Pwm::set_freq(uint32_t freq)
         div <<= 4;   // *16
         cycle >>= 4; // /16
     }
-    *tim_div = div - 1;
+    *tim_div = div - 1;    // attention: the div value will only take effect in the next cycle, so there is some delay according to the cycle length
     *tim_pr = cycle - 1;
     *tim_cdt = dutycycle * cycle;
 }
@@ -258,13 +257,15 @@ void Pwm::disable()
 void Pwm::switch2output() // about 1us
 {
     *tim_cctrl &= cctrl_mask;
-    *tim_cdt = 0; // will be loaded at the start of next period for we enabled channel output data buffer, so the next code line is necessary
-    *tim_pr = 1;  // force to overflow to make the channel reg load tim_cdt(0) in one clock to avoid a unexpected pulse
+    // *tim_cdt = 0; // will be loaded at the start of next period for we enabled channel output data buffer, so the next code line is necessary
+    // *tim_pr = 1;  // force to overflow to make the channel reg load tim_cdt(0) in one clock to avoid a unexpected pulse
 
     uint32_t tmp = *tim_cm;
     tmp &= io_dir_mask;
+    *tim_cm = tmp & ~(1 << 3); // disable cdt output buffer
+    *tim_cdt = 0;              // set tim cdt immediately when output buffer is disabled
     tmp |= pwm_output;
-    *tim_cm = tmp;
+    *tim_cm = tmp; // enable output buffer
 
     *tim_pr = cycle - 1;
     *tim_cctrl |= cctrl_out_value;
@@ -282,6 +283,7 @@ void Pwm::switch2input()
     tmp |= pwm_input;
     *tim_cm = tmp;
 
+    *tim_pr = 65535; // maximize the measuring range
     *tim_cctrl |= cctrl_in_value;
 
     if (dma_ctrl)

@@ -10,6 +10,7 @@ public:
     Dshot();
     virtual ~Dshot();
     virtual void poll(void);
+    virtual bool signal_lost();
 
     void bind(Pin pin);
     void release(void);

@@ -32,6 +32,7 @@ static State state = IDLE;
 uint32_t dshot_bits;
 Protocol::Type proto_type;
 uint32_t throttle;
+bool armed = false;
 
 #define PRINT_RPM 1
 #define PRINT_DSHOT_DATA 2
@@ -114,7 +115,7 @@ void pwm_test(void)
     }
 #endif
 }
-bool armed = false;
+
 int main(void)
 {
     system_init();
@@ -128,25 +129,30 @@ int main(void)
     debug_proto = Protocol::singleton(Protocol::SERIAL, PIN_NONE);
 #endif
     motor = MotorIf::singleton(MotorIf::BLDC);
+    sound = new Sound(motor);
+    sound->power_on_tone();
 #if PWM_TEST > 0
     pwm_test();
 #endif
-    proto = Protocol::singleton(Protocol::AUTO_DETECT, PA6);
-    sound = new Sound(motor);
-    sound->power_on_tone();
+    proto_type = Protocol::auto_detect(PA6);
+    proto = Protocol::singleton(proto_type, PA6);
+    sound->throttle_signal_detected_tone();
     while (1) // don't make one loop take more than 10us
     {
         if (__builtin_expect(!armed, false))
         {
-            proto_type = Protocol::auto_detect(PA6);
-            // if (proto_type != Protocol::AUTO_DETECT)
-            //     sound->throttle_signal_detected_tone();
+            if (proto->signal_lost())
+            {
+                proto_type = Protocol::auto_detect(PA6);
+                proto = Protocol::singleton(proto_type, PA6);
+                sound->throttle_signal_detected_tone();
+            }
         }
         else
         {
             motor->poll();
-            proto->poll();
         }
+        proto->poll();
 #if !defined(NDEBUG)
         debug_proto->poll();
         print_routine();

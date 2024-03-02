@@ -16,28 +16,18 @@ static void reset_protocol(void)
 
 Protocol::Type Protocol::auto_detect(Pin pin)
 {
-    static Protocol::Type type = AUTO_DETECT;
+    static Protocol::Type type = BRUSHED;
     TimerIf *timer = TimerIf::singleton();
     uint32_t pulses[64] = {0};
-    if (type == AUTO_DETECT)
-        reset_protocol();
+    reset_protocol();
     PwmIf *pwm = PwmIf::new_instance(pin);
     pwm->set_freq(250); // measuring range: 4ms
+    timer->delay_ms(5); // necessary delay
     while (1)
     {
         pwm->recv_pulses(pulses, 32);
-        uint32_t timeout = timer->now_ms() + 500;
-        while (pwm->recv_pulses() < 32 && timer->now_ms() < timeout)
+        while (pwm->recv_pulses() < 32)
             ;
-
-        if (timer->now_ms() >= timeout)
-        {
-            type = AUTO_DETECT;
-            break;
-        }
-
-        if (type != AUTO_DETECT) // lock the protocol util signal goes to 0 for over 500ms
-            break;
 
         if (pulses[0] + pulses[1] < 10000 || pulses[2] + pulses[3] < 10000)
         {
@@ -46,10 +36,12 @@ Protocol::Type Protocol::auto_detect(Pin pin)
             uint32_t cnt = 0;
             for (uint32_t i = 0; i < 32; i++)
             {
-                if (pulses[i] > 30000)
+                if (pulses[i] < 30000)
                     cnt++;
+                else
+                    cnt = 0;
             }
-            if (cnt > 1)
+            if (cnt == 8)
             {
                 type = PROSHOT;
             }
@@ -66,7 +58,7 @@ Protocol::Type Protocol::auto_detect(Pin pin)
         delete pwm;
         pwm = nullptr;
 
-        type = BRUSHED; // STD_PWM or BRUSHED
+        // STD_PWM or BRUSHED
         GpioIf *io = GpioIf::new_instance(pin);
         while (io->read() == 0)
         {
@@ -118,12 +110,6 @@ Protocol *Protocol::singleton(Type type, Pin pin)
         break;
 
     default: // AUTO_DETECT
-        Protocol::Type type = AUTO_DETECT;
-        do
-        {
-            type = auto_detect(pin);
-        } while (type == AUTO_DETECT);
-        return singleton(type, pin);
         break;
     }
     // assert(false);

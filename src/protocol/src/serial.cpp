@@ -69,3 +69,8 @@ void Serial::poll(void)
     }
     this->rd_sz = rd_sz;
 }
+
+bool Serial::signal_lost()
+{
+    return false;
+}

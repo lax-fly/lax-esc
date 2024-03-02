@@ -27,4 +27,5 @@ public:
     Serial();
     virtual ~Serial();
     virtual void poll(void);
+    virtual bool signal_lost();
 };
