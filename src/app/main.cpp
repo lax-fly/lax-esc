@@ -31,7 +31,7 @@ enum State
 static State state = IDLE;
 uint32_t dshot_bits;
 Protocol::Type proto_type;
-uint32_t throttle;
+float throttle;
 bool armed = false;
 
 #define PRINT_RPM 1
@@ -61,10 +61,10 @@ void print_routine()
             printf("BRUSHED\n");
             break;
         case Protocol::STD_PWM:
-            printf("STD_PWM\n");
+            printf("STD_PWM: %lu\n", (uint32_t)(throttle * 2000));
             break;
         case Protocol::ONESHOT:
-            printf("ONESHOT\n");
+            printf("ONESHOT: %lu\n", (uint32_t)(throttle * 2000));
             break;
         case Protocol::PROSHOT:
             printf("PROSHOT\n");
@@ -79,22 +79,28 @@ void print_routine()
 }
 
 #define PWM_TEST 0
-
+uint32_t pulse;
 void pwm_test(void)
 {
-#if PWM_TEST_TX == 1
+#if PWM_TEST == 1
     PwmIf *pwm = PwmIf::new_instance(PA6);
-    pwm->set_freq(1800);
-    // pwm->set_dutycycle(0.5f);
-    uint32_t pulses[] = {500000, 300000, 10000, 1000};
+    pwm->set_freq(1000);
+    pwm->set_dutycycle(0.5f);
+    while (1)
+    {
+    }
+#elif PWM_TEST == 2
+    PwmIf *pwm = PwmIf::new_instance(PA6);
+    pwm->set_mode(PwmIf::PULSE_OUTPUT_CAPTURE);
+    uint32_t pulses[] = {400000, 300000, 10000, 1000};
     while (1)
     {
         timer->delay_ms(10);
         pwm->send_pulses(pulses, 4);
     }
-#elif PWM_TEST == 2
+#elif PWM_TEST == 3
     PwmIf *pwm = PwmIf::new_instance(PA6);
-    pwm->set_freq(2000);
+    pwm->set_mode(PwmIf::PULSE_OUTPUT_CAPTURE);
     uint32_t pulses[32];
     while (1)
     {
@@ -112,6 +118,16 @@ void pwm_test(void)
             buf[len + 1] = 0;
             printf("%s", buf);
         }
+    }
+#elif PWM_TEST == 4
+    PwmIf *pwm = PwmIf::new_instance(PA6);
+    pwm->set_mode(PwmIf::UP_PULSE_CAPTURE);
+    pwm->set_up_pulse_callback([](uint32_t p)
+                               { pulse = p; });
+    while (1)
+    {
+        timer->delay_ms(500);
+        printf("%lu\n", pulse);
     }
 #endif
 }
@@ -139,16 +155,15 @@ int main(void)
     sound->throttle_signal_detected_tone();
     while (1) // don't make one loop take more than 10us
     {
-        if (__builtin_expect(!armed, false))
+        if (__builtin_expect(proto->signal_lost(), false))
         {
-            if (proto->signal_lost())
-            {
-                proto_type = Protocol::auto_detect(PA6);
-                proto = Protocol::singleton(proto_type, PA6);
-                sound->throttle_signal_detected_tone();
-            }
+            armed = false;
+            motor->set_throttle(0);
+            proto_type = Protocol::auto_detect(PA6);
+            proto = Protocol::singleton(proto_type, PA6);
+            sound->throttle_signal_detected_tone();
         }
-        else
+        if (__builtin_expect(armed, true))
         {
             motor->poll();
         }

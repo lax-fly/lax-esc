@@ -61,10 +61,7 @@ static uint32_t buffer[32];
 static int rd_sz;
 static State state;
 static uint64_t resp_time;
-static uint32_t period;
 static uint32_t period45; // 4/5 * period, used for bi dir dshot
-static uint32_t freq;
-static uint32_t freq54; // 5/4 * freq, used for bi dir dshot
 static uint32_t half_period;
 static uint64_t now_us;
 
@@ -75,7 +72,6 @@ static uint8_t cmd_repeat = 0;
 static uint8_t beacon_mode = 0;
 static bool mode_3d = false;
 static bool spin_dir_reverse = false;
-static bool armed = false;
 static uint32_t throttle = 0;
 
 static bool send_temparature = true;
@@ -88,7 +84,9 @@ static uint32_t send_voltage_time = 600;
 
 static uint16_t send_value = 0;
 static uint32_t timeout = 0;
+
 extern uint32_t dshot_bits;
+extern bool armed;
 
 AdcIf *adc_temp;
 AdcIf *adc_volt;
@@ -116,8 +114,7 @@ Dshot::Dshot()
 void Dshot::bind(Pin pin)
 {
     pwm = PwmIf::new_instance(pin);
-    pwm->set_freq(2000);
-    pwm->set_polarity(0);
+    pwm->set_mode(PwmIf::PULSE_OUTPUT_CAPTURE);
     restart();
 }
 
@@ -134,7 +131,6 @@ Dshot::~Dshot()
 
 void restart(void)
 {
-    period = 0;
     rd_sz = 0;
     if (state == RECEIVE)
         pwm->recv_pulses(buffer, sizeof(buffer) / sizeof(buffer[0]));
@@ -162,7 +158,8 @@ void dshot_process(uint32_t dshot_bits)
     switch (value) // Commands 0-36 are only executed when motors are stopped.
     {
     case DSHOT_CMD_MOTOR_STOP:
-        armed = false;
+        if (!armed)
+            armed = true;
         break;
     case DSHOT_CMD_BEACON1:
     case DSHOT_CMD_BEACON2:
@@ -249,6 +246,7 @@ void proccess(void)
 
     if (__builtin_expect(!armed, false))
     { // auto calc the period when disarmed
+        uint32_t period = 0;
         for (uint32_t i = 0; i < 15; i++)
         {
             register uint32_t high = buffer[i * 2];
@@ -262,9 +260,6 @@ void proccess(void)
         period /= 15;
         half_period = period / 2;
         period45 = period * 4 / 5;
-        freq = 1000000000 / period;
-        freq54 = freq * 5 / 4;
-        pwm->set_freq(freq54);
     }
     else
     {
@@ -288,11 +283,13 @@ void proccess(void)
     if (crc_sum == 0) // normal dshot
     {
         dshot_process(dshot_bits >> 4);
+        timeout = 0;
     }
     else if (crc_sum == 0xf) // dshot2d
     {
         dshot_process(dshot_bits >> 4);
         send_telemetry();
+        timeout = 0;
     }
 }
 
@@ -454,7 +451,6 @@ void receive_dealing()
         return;
     }
     ::rd_sz = rd_sz;
-    timeout = 0;
 }
 
 void send_dealing()
@@ -465,7 +461,7 @@ void send_dealing()
     if (state == TO_SEND)
     {
         state = SENDING;
-        pwm->send_pulses(buffer, 21);
+        pwm->send_pulses(buffer, 21, period45);
         return;
     }
 
@@ -483,7 +479,7 @@ void Dshot::poll(void)
     now_us = timer->now_us();
     if (run_time > now_us)
         return;
-    run_time += 6;  // 6us, the max dshot bit length for 150kHz
+    run_time += 6; // 6us, the max dshot bit length for 150kHz
 
     if (state != RECEIVE)
         send_dealing();
@@ -496,5 +492,5 @@ void Dshot::poll(void)
 
 bool Dshot::signal_lost()
 {
-    return (timeout > 100000);
+    return (timeout > 50000);
 }

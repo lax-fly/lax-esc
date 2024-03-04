@@ -1,85 +1,90 @@
 #include "protocol.h"
 #include "serial.h"
 #include "dshot.h"
+#include "oneshot.h"
 
 #include <assert.h>
 #include "string.h"
 
 static Serial *serial = nullptr;
 static Dshot *dshot = nullptr;
+static Oneshot *oneshot = nullptr;
 
 static void reset_protocol(void)
 {
     if (dshot)
         dshot->release();
+    if (oneshot)
+        oneshot->release();
 }
 
+volatile uint32_t pulse_cnt = 0;
+static uint32_t pulses[16] = {0};
+#define ARRAY_SZ(x) (sizeof(x) / sizeof(x[0]))
 Protocol::Type Protocol::auto_detect(Pin pin)
 {
     static Protocol::Type type = BRUSHED;
     TimerIf *timer = TimerIf::singleton();
-    uint32_t pulses[64] = {0};
     reset_protocol();
     PwmIf *pwm = PwmIf::new_instance(pin);
-    pwm->set_freq(250); // measuring range: 4ms
-    timer->delay_ms(5); // necessary delay
+    pwm->set_mode(PwmIf::UP_PULSE_CAPTURE); // measuring range: 4ms
+    timer->delay_ms(5);                     // necessary delay
+    pwm->set_up_pulse_callback(
+        [](uint32_t p)
+        {
+            if (pulse_cnt < ARRAY_SZ(pulses))
+                pulses[pulse_cnt++] = p;
+        });
     while (1)
     {
-        pwm->recv_pulses(pulses, 32);
-        while (pwm->recv_pulses() < 32)
+        pulse_cnt = 0;
+        uint32_t start;
+        uint32_t period[4] = {0};
+        while (pulse_cnt < 1)
             ;
+        start = timer->now_us();
+        while (pulse_cnt < 2)
+            ;
+        period[0] = timer->now_us() - start;
+        while (pulse_cnt < 3)
+            ;
+        period[1] = timer->now_us() - start - period[0];
+        while (pulse_cnt < 8)
+            ;
+        period[2] = timer->now_us() - start;
+        while (pulse_cnt < 15)
+            ;
+        period[3] = timer->now_us() - start - period[2];
 
-        if (pulses[0] + pulses[1] < 10000 || pulses[2] + pulses[3] < 10000)
+        if (period[0] < 10 || period[1] < 10)
         {
+            uint32_t min = period[0] > period[1] ? period[1] : period[0];
             type = DSHOT;
-
-            uint32_t cnt = 0;
-            for (uint32_t i = 0; i < 32; i++)
-            {
-                if (pulses[i] < 30000)
-                    cnt++;
-                else
-                    cnt = 0;
-            }
-            if (cnt == 8)
-            {
+            if (period[2] > min * 7 + 10 && period[3] > min * 7 + 10)
                 type = PROSHOT;
-            }
-
             break;
         }
 
-        if (pulses[0] < 300000 || pulses[1] < 300000 || pulses[2] < 300000)
+        if ((pulses[0] < 270000 && pulses[0] > 4500) ||
+            (pulses[1] < 270000 && pulses[1] > 4500))
         {
             type = ONESHOT;
             break;
         }
 
-        delete pwm;
-        pwm = nullptr;
-
-        // STD_PWM or BRUSHED
-        GpioIf *io = GpioIf::new_instance(pin);
-        while (io->read() == 0)
-        {
-        }
-        uint64_t start = timer->now_us();
-        uint32_t cnt = 0;
-        while (io->read() == 1)
-        {
-            cnt++;
-            while (timer->now_us() < start + cnt * 100)
-            {
-            }
-        }
-        uint32_t max_throttle;
-        uint32_t min_throttle;
-        if (cnt > 9 && cnt < 21)
+        if ((pulses[0] > 950000 && pulses[0] < 2050000) ||
+            (pulses[1] > 950000 && pulses[1] < 2050000))
         {
             type = STD_PWM;
+            break;
         }
-        delete io;
-        break;
+
+        if ((pulses[0] < 700000 && pulses[0] > 300000) ||
+            (pulses[1] < 700000 && pulses[1] > 300000))
+        {
+            type = BRUSHED;
+            break;
+        }
     }
 
     delete pwm;
@@ -105,6 +110,11 @@ Protocol *Protocol::singleton(Type type, Pin pin)
         break;
     case STD_PWM:
     case ONESHOT:
+        if (!oneshot)
+            oneshot = new Oneshot();
+        oneshot->release();
+        oneshot->bind(pin);
+        return oneshot;
         break;
     case PROSHOT:
         break;
