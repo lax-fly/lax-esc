@@ -41,7 +41,6 @@ static uint32_t voltage_gain = 11;    // the read voltage value divided by volta
 
 /**********************************************************************/
 
-
 #define ARRAY_CNT(x) (sizeof(x) / sizeof(x[0]))
 
 static void set_dutycycle(float dutycycle);
@@ -85,6 +84,7 @@ static float pwm_dutycycle = 0;
 static uint32_t demag = UINT32_MAX;
 static uint32_t speed_change_limit = 0;
 static int spin_direction = 0; // 1: forward -1: backward
+static bool armed = false;
 
 static uint64_t next_zero = 0;
 static uint64_t commutate_time;
@@ -211,7 +211,7 @@ Bldc::Bldc()
     adc_cur = AdcIf::new_instance(ADC_CUR_PIN);
     set_throttle(0);
     batery_voltage = adc_bat->sample_voltage() * voltage_gain;
-    batery_voltage = batery_voltage < VOLTAGE_1S ? VOLTAGE_1S : batery_voltage;
+    batery_voltage = 8000;//batery_voltage < VOLTAGE_1S ? VOLTAGE_1S : batery_voltage;
     heavy_load_erpm = batery_voltage * kv / 1000 * polar_cnt / 2 / 4;
     turn_dir_erpm = 450 * polar_cnt / 2;
 
@@ -423,6 +423,8 @@ int Bldc::get_erpm() const
 
 int Bldc::get_e_period() const
 {
+    if (erpm == 0)
+        return 0xffff;
     return 60 * 1000000 / erpm;
 }
 
@@ -489,6 +491,9 @@ void Bldc::stop()
 
 void Bldc::poll()
 {
+    if (!armed)
+        return;
+
     now = timer->now_us();
 
     static int step = 0;
@@ -541,4 +546,27 @@ void Bldc::beep(uint32_t freq, VolumeLevel volume)
         break;
     }
     AC();
+}
+
+void Bldc::arm(bool state)
+{
+    if (state == armed)
+        return;
+
+    throttle = 0;
+    pwm_dutycycle = 0;
+    set_dutycycle(0);
+
+    if (!armed && state)
+    {
+        beep(TONE5, MotorIf::VOLUME_LOW);
+        timer->delay_ms(500);
+        beep(TONE5, MotorIf::VOLUME_OFF);
+    }
+    armed = state;
+}
+
+bool Bldc::is_armed()
+{
+    return armed;
 }

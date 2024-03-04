@@ -315,7 +315,7 @@ int Pwm::send_pulses(const uint32_t *pulses, uint32_t sz, uint32_t period)
         return *dma_dtcnt;
 
     uint32_t i = 0;
-    *tim_pr = period * (SYS_CLOCK_FREQ / 1000000) / 1000;
+    *tim_pr = period * (SYS_CLOCK_FREQ / 1000000) / 1000 - 1;
     for (; i < sz; i++) // cost about 3us
     {
         uint32_t ticks = pulses[i] * (SYS_CLOCK_FREQ / 1000000) / 1000; // map the pulse time to ticks

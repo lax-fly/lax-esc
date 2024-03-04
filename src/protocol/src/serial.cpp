@@ -3,6 +3,8 @@
 #include "stdlib.h"
 #include "motor.h"
 
+#ifndef NDEBUG
+
 extern UsartIf *debug_usart;
 extern MotorIf *motor;
 
@@ -74,3 +76,5 @@ bool Serial::signal_lost()
 {
     return false;
 }
+
+#endif

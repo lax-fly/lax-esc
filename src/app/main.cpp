@@ -32,12 +32,12 @@ static State state = IDLE;
 uint32_t dshot_bits;
 Protocol::Type proto_type;
 float throttle;
-bool armed = false;
 
 #define PRINT_RPM 1
 #define PRINT_DSHOT_DATA 2
 #define PRINT_PROTO 3
-#define PRINT_DEBUG PRINT_PROTO
+#define PRINT_DEBUG PRINT_DSHOT_DATA
+
 void print_routine()
 {
     static uint32_t run_time = 0;
@@ -83,7 +83,7 @@ uint32_t pulse;
 void pwm_test(void)
 {
 #if PWM_TEST == 1
-    PwmIf *pwm = PwmIf::new_instance(PA6);
+    PwmIf *pwm = PwmIf::new_instance(PA9);
     pwm->set_freq(1000);
     pwm->set_dutycycle(0.5f);
     while (1)
@@ -96,7 +96,7 @@ void pwm_test(void)
     while (1)
     {
         timer->delay_ms(10);
-        pwm->send_pulses(pulses, 4);
+        pwm->send_pulses(pulses, 4, 500000);
     }
 #elif PWM_TEST == 3
     PwmIf *pwm = PwmIf::new_instance(PA6);
@@ -155,19 +155,16 @@ int main(void)
     sound->throttle_signal_detected_tone();
     while (1) // don't make one loop take more than 10us
     {
-        if (__builtin_expect(proto->signal_lost(), false))
+        uint32_t t = timer->now_us();
+        if (proto->signal_lost())
         {
-            armed = false;
-            motor->set_throttle(0);
             proto_type = Protocol::auto_detect(PA6);
             proto = Protocol::singleton(proto_type, PA6);
             sound->throttle_signal_detected_tone();
         }
-        if (__builtin_expect(armed, true))
-        {
-            motor->poll();
-        }
+        motor->poll();
         proto->poll();
+        motor->poll();
 #if !defined(NDEBUG)
         debug_proto->poll();
         print_routine();

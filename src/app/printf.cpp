@@ -54,15 +54,19 @@ extern "C"
     }
     int _read(int file, char *ptr, int len)
     {
+#ifndef NDEBUG
         if (debug_usart)
             return debug_usart->async_recv((uint8_t *)ptr, len);
         else
             return 0;
+#endif
     }
     int _write(int file, char *ptr, int len)
     {
+#ifndef NDEBUG
         if (debug_usart)
             debug_usart->async_send((uint8_t *)ptr, len);
+#endif
         return len;
     }
     void abort(void)
@@ -72,10 +76,12 @@ extern "C"
         /* Abort called */
         while (1)
         {
+#ifndef NDEBUG
             if (timer)
                 timer->delay_ms(1000);
             if (debug_usart)
                 debug_usart->sync_send((const uint8_t *)"exception happened\n", 19);
+#endif
         }
     }
 }

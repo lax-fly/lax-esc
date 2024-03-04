@@ -15,5 +15,7 @@ public:
     virtual void set_throttle(float v);
     virtual void stop();
     virtual void beep(uint32_t freq, VolumeLevel volume);
+    virtual void arm(bool state);
+    virtual bool is_armed();
     virtual void poll();
 };

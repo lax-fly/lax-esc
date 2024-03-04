@@ -1,10 +1,12 @@
 #include "dshot.h"
 #include "board.h"
 #include "msp.h"
+#include "motor.h"
 
 #include <stdio.h>
 #include <assert.h>
 
+extern MotorIf *motor;
 /*
   copied from betaflight code: src\main\drivers\dshot_command.h
   DshotSettingRequest (KISS24). Spin direction, 3d and save Settings require 10 requests.. and the TLM Byte must always be high if 1-47 are used to send settings
@@ -61,7 +63,7 @@ static uint32_t buffer[32];
 static int rd_sz;
 static State state;
 static uint64_t resp_time;
-static uint32_t period45; // 4/5 * period, used for bi dir dshot
+static uint32_t period45 = 0; // 4/5 * period, used for bi dir dshot
 static uint32_t half_period;
 static uint64_t now_us;
 
@@ -83,10 +85,10 @@ static uint32_t send_current_time = 300;
 static uint32_t send_voltage_time = 600;
 
 static uint16_t send_value = 0;
-static uint32_t timeout = 0;
+static uint32_t frame_err = 0;
+static uint32_t freq_lock = 0;
 
 extern uint32_t dshot_bits;
-extern bool armed;
 
 AdcIf *adc_temp;
 AdcIf *adc_volt;
@@ -115,6 +117,8 @@ void Dshot::bind(Pin pin)
 {
     pwm = PwmIf::new_instance(pin);
     pwm->set_mode(PwmIf::PULSE_OUTPUT_CAPTURE);
+    freq_lock = 0;
+    frame_err = 0;
     restart();
 }
 
@@ -138,7 +142,7 @@ void restart(void)
 
 void dshot_process(uint32_t dshot_bits)
 {
-    bool telemetry = !!(dshot_bits & 1);
+    bool telemetry = dshot_bits & 1;
 
     ::dshot_bits = dshot_bits;
     int value = (int)dshot_bits >> 1;
@@ -152,14 +156,11 @@ void dshot_process(uint32_t dshot_bits)
         last_cmd = (dshotCommands_e)value;
     }
 
-    // if (value < 37 && armed)
-    //     return;
-
     switch (value) // Commands 0-36 are only executed when motors are stopped.
     {
     case DSHOT_CMD_MOTOR_STOP:
-        if (!armed)
-            armed = true;
+        motor->set_throttle(0);
+        motor->arm(true);
         break;
     case DSHOT_CMD_BEACON1:
     case DSHOT_CMD_BEACON2:
@@ -231,7 +232,10 @@ void dshot_process(uint32_t dshot_bits)
 
     default:
         if (value > 47)
+        {
             throttle = value - 47;
+            motor->set_throttle(throttle / 2000.0f);
+        }
         break;
     }
 }
@@ -244,7 +248,7 @@ void proccess(void)
     resp_time = now_us + 25; // 30us, 5us for error
     uint16_t dshot_bits = 0;
 
-    if (__builtin_expect(!armed, false))
+    if (__builtin_expect(freq_lock < 3, false))
     { // auto calc the period when disarmed
         uint32_t period = 0;
         for (uint32_t i = 0; i < 15; i++)
@@ -259,7 +263,13 @@ void proccess(void)
         }
         period /= 15;
         half_period = period / 2;
-        period45 = period * 4 / 5;
+        uint32_t tmp = period * 4 / 5;
+        uint32_t delta = period45 > tmp ? period45 - tmp : tmp - period45;
+        if (period45 && delta < 500)
+            freq_lock++;
+        else
+            freq_lock = 0;
+        period45 = tmp;
     }
     else
     {
@@ -283,13 +293,13 @@ void proccess(void)
     if (crc_sum == 0) // normal dshot
     {
         dshot_process(dshot_bits >> 4);
-        timeout = 0;
+        frame_err = 0;
     }
     else if (crc_sum == 0xf) // dshot2d
     {
         dshot_process(dshot_bits >> 4);
         send_telemetry();
-        timeout = 0;
+        frame_err = 0;
     }
 }
 
@@ -427,7 +437,7 @@ void send_telemetry(void)
 SEND_ERPM: // actually, the data sended is the period of erpm (1/erpm)
     // format e e e m m m m m m m m m,  erpm = M << E
     uint32_t E = 0;
-    send_value = 1000000 / 1960; // 1000000/erpm us
+    send_value = motor->get_e_period(); // 1000000/erpm us
     while (send_value > ((1 << 9) - 1))
     {
         send_value >>= 1;
@@ -447,7 +457,6 @@ void receive_dealing()
     if (rd_sz == ::rd_sz)
     { // no byte received over 20us, so restart frame
         restart();
-        timeout++;
         return;
     }
     ::rd_sz = rd_sz;
@@ -485,6 +494,7 @@ void Dshot::poll(void)
         send_dealing();
     else
     {
+        frame_err++;
         scheduling_telemetry();
         receive_dealing();
     }
@@ -492,5 +502,11 @@ void Dshot::poll(void)
 
 bool Dshot::signal_lost()
 {
-    return (timeout > 50000);
+    bool res = frame_err > 50000;
+    static uint32_t max = 0;
+    if (frame_err > max)
+        max = frame_err;
+    if (res)
+        motor->arm(false);
+    return res;
 }

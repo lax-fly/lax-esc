@@ -1,5 +1,6 @@
 #include "oneshot.h"
 #include "stdio.h"
+#include "motor.h"
 
 static volatile uint32_t pulse = 0;
 static PwmIf *pwm = nullptr;
@@ -8,10 +9,10 @@ static uint32_t min_pulse;
 static uint32_t max_pulse;
 static TimerIf *timer;
 static uint32_t run_time = 0;
-static bool pre_arm = false;
+static bool data_updated = false;
 
 extern float throttle;
-extern bool armed;
+extern MotorIf *motor;
 
 Oneshot::Oneshot()
 {
@@ -29,12 +30,20 @@ void Oneshot::poll(void)
     {
         run_time = now + 5;
         frame_err++;
+
+        if (data_updated && throttle < 0.05f)
+            motor->arm(true);
+
+        motor->set_throttle(throttle);
     }
 }
 
 bool Oneshot::signal_lost()
 {
-    return frame_err > 100;
+    bool res = frame_err > 100;
+    if (res)
+        motor->arm(false);
+    return res;
 }
 
 uint32_t calc_average(uint32_t data)
@@ -72,9 +81,10 @@ void calibrate_shot(uint32_t low, uint32_t high)
             run_time = now;
             max_pulse = calc_average(pulse);
             if (now - last_time < 200)
-                ; // beep on
+                motor->beep(TONE5, MotorIf::VOLUME_LOW); // beep on
             else
-                ; // beep off
+                motor->beep(TONE5, MotorIf::VOLUME_OFF);
+            ; // beep off
             if (now - last_time >= 1000)
             {
                 second++;
@@ -84,8 +94,18 @@ void calibrate_shot(uint32_t low, uint32_t high)
                 break;
         }
     }
-    for (uint32_t i = 0; i < 4; i++)
+    for (uint32_t i = 0; i < 3; i++)
     {
+        motor->beep(TONE2, MotorIf::VOLUME_LOW);
+        timer->delay_ms(200);
+        motor->beep(TONE3, MotorIf::VOLUME_LOW);
+        timer->delay_ms(200);
+        motor->beep(TONE4, MotorIf::VOLUME_LOW);
+        timer->delay_ms(200);
+        motor->beep(TONE5, MotorIf::VOLUME_LOW);
+        timer->delay_ms(200);
+        motor->beep(TONE5, MotorIf::VOLUME_OFF);
+        timer->delay_ms(200);
         // four up tone beep
     }
     printf("max throttle saved, wait for throttle low\n");
@@ -105,13 +125,13 @@ void calibrate_shot(uint32_t low, uint32_t high)
             run_time = now;
             min_pulse = calc_average(pulse);
             if (now - last_time < 200)
-                ; // beep on
+                motor->beep(TONE2, MotorIf::VOLUME_LOW); // beep on
             else if (now - last_time < 300)
-                ; // beep off
+                motor->beep(TONE2, MotorIf::VOLUME_OFF); // beep off
             else if (now - last_time < 500)
-                ; // beep on
+                motor->beep(TONE2, MotorIf::VOLUME_LOW); // beep on
             else
-                ; // beep off
+                motor->beep(TONE2, MotorIf::VOLUME_OFF); // beep off
             if (now - last_time >= 1000)
             {
                 second++;
@@ -123,28 +143,21 @@ void calibrate_shot(uint32_t low, uint32_t high)
     }
     printf("min throttle saved, ready to start or reboot\n");
     timer->delay_ms(10);
-    for (uint32_t i = 0; i < 4; i++)
+    for (uint32_t i = 0; i < 3; i++)
     {
-        // four down tone beep
+        motor->beep(TONE5, MotorIf::VOLUME_LOW);
+        timer->delay_ms(200);
+        motor->beep(TONE3, MotorIf::VOLUME_LOW);
+        timer->delay_ms(200);
+        motor->beep(TONE4, MotorIf::VOLUME_LOW);
+        timer->delay_ms(200);
+        motor->beep(TONE2, MotorIf::VOLUME_LOW);
+        timer->delay_ms(200);
+        motor->beep(TONE2, MotorIf::VOLUME_OFF);
+        timer->delay_ms(200);
+        // four up tone beep
     }
     printf("min throttle saved, ready to arm and start or reboot\n");
-    timer->delay_ms(10);
-    while (pulse < min_pulse * 1.05f)
-    {
-    }
-    printf("throttle signal detected, then put throttle to 0 to arm esc\n");
-    timer->delay_ms(10);
-    while (1)
-    {
-        if (pulse > min_pulse * 1.05f)
-            last_time = timer->now_ms();
-        if (timer->now_ms() - last_time > 1000)
-        {
-            armed = true;
-            printf("esc armed\n");
-            break;
-        }
-    }
     timer->delay_ms(10);
 }
 
@@ -197,6 +210,7 @@ void calibration(void)
 
 void Oneshot::bind(Pin pin)
 {
+    pulse = 0;
     pwm = PwmIf::new_instance(pin);
     pwm->set_mode(PwmIf::UP_PULSE_CAPTURE); // measuring range: 4ms
     pwm->set_up_pulse_callback(
@@ -215,13 +229,9 @@ void Oneshot::bind(Pin pin)
             }
             else
             {
-                pre_arm = true;
+                data_updated = true;
                 frame_err = 0;
                 throttle = (p - min_pulse) * 1.0f / (max_pulse - min_pulse);
-            }
-            if (!armed)
-            {
-                armed = pre_arm && throttle < 0.05f;
             }
         });
     calibration();

@@ -95,11 +95,13 @@ Protocol *Protocol::singleton(Type type, Pin pin)
 {
     switch (type)
     {
+#ifndef NDEBUG
     case SERIAL:
         if (serial)
             return serial;
         return serial = new Serial();
         break;
+#endif
     case DSHOT:
         if (!dshot)
             dshot = new Dshot();
