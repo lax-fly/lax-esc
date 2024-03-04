@@ -43,7 +43,19 @@ enum Pin
 class PwmIf
 {
 public:
+    enum Mode
+    {
+        // requirements by all mode: output resolution > 2000, input measuring resolution >= 65535, range > 2.5ms
+        PWM_OUTPUT,             // legacy period pwm putput.
+        UP_PULSE_CAPTURE,       // only capture up pulses, and dosen't support output.
+        PULSE_OUTPUT_CAPTURE,   // output pulses and capture pulses，out put polarity is low, capture both up pulse and down pulse.
+    };
     virtual ~PwmIf() {}
+    // set the PWM work mode, time insensitive, you can do many jobs in this function without worrying about time.
+    virtual void set_mode(Mode mode = PWM_OUTPUT) = 0;
+
+    // interfaces below are time sensitive, make them run as fast as possible
+    /****************************** functions for PWM_OUTPUT mode only ******************************/ 
     virtual void set_dutycycle(float dutycycle) = 0; // 0.0~1.0
     /**
      * @brief set frequency, valid range: 1Hz~10MHz
@@ -56,30 +68,40 @@ public:
     virtual uint32_t get_duty() const = 0;  // return the pwm duty length, unit insensitive(normally the timer tick count)
     virtual uint32_t get_cycle() const = 0; // return the pwm cycle length, unit insensitive(normally the timer tick count)
     virtual uint32_t get_pos() const = 0;   // return the current pwm output position in the cycle, unit insensitive(normally the timer tick count)
+    /****************************** functions for PWM_OUTPUT mode only ******************************/
+    
+    /****************************** functions for PULSE_OUTPUT_CAPTURE mode only ******************************/ 
     /**
-     *  @brief for output only, set the output polarity, edge > 0: high, edge <= 0: low
+     * @brief write a array of pulse in ns to the output, set pulses to null to check if last write is finished
+     * if last write is finished, return 0, or return -1. send_pulses is asynchronous, works with set_freq function
+     * @param pulses will be copied internally, unit ns, the value range should be support up to 500000ns.
+     * when pulses=null, the function should return the data count left to be sent after last call with pulses!=0.
+     * @note send_pulses function is not required to support multiple pins when using the same timer. let me put this in another way:
+     * many mcu use timer peripheral to generate/capture pwm, and one timer support at most 4 channel(pins), but for efficiency,
+     * one timer should be attached to only one pwm object when send_pulses is ever used, so the implementation runs faster without checking different channels.
+     * in the meantime, the esc application will use only one pin to call send_pulses function
+     * @return data count left to be sent
      */
-    virtual void set_polarity(int edge = 1) = 0;
+    virtual int send_pulses(const uint32_t *pulses = 0, uint32_t sz = 0, uint32_t period = 0) = 0;
     /**
-     *  @brief write a array of pulse in ns to the output, set pulses to null to check if last write is finished
-     * if last write is finished, return 0, or return -1. send_pulses is asynchronous.
-     *  @param pulses will be copied internally, unit ns, default support range: 0~500000ns.
-     *  use set_freq to grow this range. note, the wider range, the lower accuracy
-     *  for example, if you set_freq(1000), the period will be 1/1000 = 1ms, so the range will be 0~1ms
-     */
-    virtual int send_pulses(const uint32_t *pulses = 0, uint32_t sz = 0) = 0;
-    /**
-     * @brief measuring the input pulses, |```|___| is treated as two pulses(up pulse and down pulse)，
-     *        notice that the recv_pulses don't care about the pulse direction but the pulse width, pulse width must be in unit ns,
-     *        the accuracy granularity must be less than 1/freq/4000, where the 'freq' is set by set_freq
+     * @brief measuring the input pulses in ns, and save them in buffer 'pulses'.
+     * recv_pulses measures both edge, so |```|___| is treated as two pulses(up pulse and down pulse)，
+     * notice that recv_pulses doesn't care about polarity, in other words, the 'pulses' dosen't indicate the direction but only the pulse width.
+     * when pulses=null, the function should return the data count received after last call with pulses!=0.
      * @return currently received pulses
+     * @note reffer to send_pulses function
      */
     virtual int recv_pulses(uint32_t *pulses = 0, uint32_t sz = 0) = 0;
+    /****************************** functions for PULSE_OUTPUT_CAPTURE mode only ******************************/ 
+
+    /****************************** functions for UP_PULSE_CAPTURE mode only ******************************/ 
+    typedef void (*Callback)(uint32_t pulse_width);
     /**
-     * @brief can capture
-     * @return -1 if no pulse received, else return the most recently received pulse width in ns
+     * @brief capture up pulse, and call back when it's done
      */
-    virtual int recv_high_pulse() = 0;
+    virtual void set_up_pulse_callback(Callback cb) = 0;
+    /****************************** functions for UP_PULSE_CAPTURE mode only ******************************/ 
+    
     static PwmIf *new_instance(Pin pin);
 };
 

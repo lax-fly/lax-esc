@@ -120,6 +120,9 @@ inline void Pwm::tim_config(tmr_type *tim, tmr_channel_select_type ch)
     tmr_input_channel_init(tim, &tmr_input_struct, TMR_CHANNEL_INPUT_DIV_1);
     cctrl_in_value = *tim_cctrl & ~cctrl_mask;
     pwm_input = *tim_cm & ~io_dir_mask;
+    cctrl_in_high_value = ~0b1010 & cctrl_in_value;
+    cctrl_in_low_value = ~0b1000 & cctrl_in_value;
+    cctrl_in_both_value = cctrl_in_value;
 
     tmr_output_config_type tmr_output_struct;
     tmr_output_struct.oc_mode = TMR_OUTPUT_CONTROL_PWM_MODE_A;
@@ -136,15 +139,29 @@ inline void Pwm::tim_config(tmr_type *tim, tmr_channel_select_type ch)
     cctrl_out_low_value = cctrl_out_high_value | (TMR_OUTPUT_ACTIVE_LOW << (ch_idx * 4 + 1));
     cctrl_out_value = cctrl_out_high_value;
     pwm_output = *tim_cm & ~io_dir_mask;
+    it_enable = TMR_C1_INT << ch_idx;
+    it_disable = ~it_enable;
 
     tmr_output_enable(tim, TRUE);
     tmr_counter_enable(tim, TRUE);
+    nvic_irq_enable(TMR3_GLOBAL_IRQn, 0, 0);
+}
+inline void Pwm::dma_release()
+{
+    if (dma_ctrl)
+    {
+        *dma_ctrl = 0;
+        *dma_paddr = 0;
+        *dma_maddr = 0;
+        *dma_dtcnt = 0;
+        dma_ctrl = 0;
+        *tim_iden &= ~enable_dma_request; // enable tmr's dma request
+    }
 }
 
-inline void Pwm::dma_config(dma_channel_type *dma)
+inline void Pwm::dma_config()
 {
     // dma config
-    dma_ctrl = nullptr;
     if (!dma || dma->paddr) // check if dma is occupied by checking the peripheral address
         return;
 
@@ -172,10 +189,12 @@ inline void Pwm::dma_config(dma_channel_type *dma)
 Pwm::Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma)
 {
     freq = 0;
-    mode = OUTPUT; // OUTPUT default
+    io_dir = OUTPUT; // OUTPUT default
+    dma_ctrl = nullptr;
+    callback = nullptr;
+    this->dma = dma;
 
     tim_config(tim, ch);
-    dma_config(dma);
 
     set_freq(1000);
     set_dutycycle(0);
@@ -184,13 +203,7 @@ Pwm::Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma)
 Pwm::~Pwm()
 {
     // release dma
-    if (dma_ctrl)
-    {
-        *dma_ctrl = 0;
-        *dma_paddr = 0;
-        *dma_maddr = 0;
-        *dma_dtcnt = 0;
-    }
+    dma_release();
     // release tim
     *tim_iden &= ~enable_dma_request;
     *tim_cctrl &= cctrl_mask;
@@ -211,14 +224,14 @@ void Pwm::set_freq(uint32_t freq)
     if (__builtin_expect(this->freq == freq, false)) // the current min and max freq are 1000 and 12MHz, value outside that is illegal
         return;
     this->freq = freq;
-    div = 1;
+    uint32_t div = 1;
     cycle = SYS_CLOCK_FREQ / freq;
-    while (__builtin_expect(cycle > 65535, false))
+    while (__builtin_expect(cycle > DEFAULT_PWM_PERIOD - 1, false))
     {                // at most loop 3 times while freq = 1
         div <<= 4;   // *16
         cycle >>= 4; // /16
     }
-    *tim_div = div - 1;    // attention: the div value will only take effect in the next cycle, so there is some delay according to the cycle length
+    *tim_div = div - 1; // attention: the div value will only take effect in the next cycle, so there is some delay according to the cycle length
     *tim_pr = cycle - 1;
     *tim_cdt = dutycycle * cycle;
 }
@@ -267,7 +280,7 @@ void Pwm::switch2output() // about 1us
     tmp |= pwm_output;
     *tim_cm = tmp; // enable output buffer
 
-    *tim_pr = cycle - 1;
+    // *tim_pr = cycle - 1;
     *tim_cctrl |= cctrl_out_value;
 
     if (dma_ctrl)
@@ -283,19 +296,18 @@ void Pwm::switch2input()
     tmp |= pwm_input;
     *tim_cm = tmp;
 
-    *tim_pr = 65535; // maximize the measuring range
     *tim_cctrl |= cctrl_in_value;
 
     if (dma_ctrl)
         *dma_ctrl = dma_p2m;
 }
 
-int Pwm::send_pulses(const uint32_t *pulses, uint32_t sz)
+int Pwm::send_pulses(const uint32_t *pulses, uint32_t sz, uint32_t period)
 {
     assert(sz < BUF_SIZE);
-    if (mode != OUTPUT)
+    if (io_dir != OUTPUT)
     {
-        mode = OUTPUT;
+        io_dir = OUTPUT;
         switch2output();
     }
 
@@ -303,10 +315,10 @@ int Pwm::send_pulses(const uint32_t *pulses, uint32_t sz)
         return *dma_dtcnt;
 
     uint32_t i = 0;
-    uint32_t scale = 1000 * div;
+    *tim_pr = period * (SYS_CLOCK_FREQ / 1000000) / 1000;
     for (; i < sz; i++) // cost about 3us
     {
-        uint32_t ticks = pulses[i] * (SYS_CLOCK_FREQ / 1000000) / scale; // map the pulse time to ticks
+        uint32_t ticks = pulses[i] * (SYS_CLOCK_FREQ / 1000000) / 1000; // map the pulse time to ticks
         buf[i] = ticks;
     }
     buf[i] = 0;
@@ -338,9 +350,9 @@ int Pwm::recv_pulses(uint32_t *pulses, uint32_t sz)
 { // support max frame length 500us, which is far more enough for dshot150 to dshot 1200
     assert(sz < BUF_SIZE);
 
-    if (mode != INPUT)
+    if (io_dir != INPUT)
     {
-        mode = INPUT;
+        io_dir = INPUT;
         switch2input();
     }
 
@@ -352,14 +364,14 @@ int Pwm::recv_pulses(uint32_t *pulses, uint32_t sz)
         if (rd_idx >= data_sz)
             return rd_idx; // no new data
 
-        uint32_t scale = 256 * 1000 * div / (SYS_CLOCK_FREQ / 1000000); // count of ns in one tick, multiplied by 256 to lower the dividing error;
+        uint32_t scale = 256 * 1000 / (SYS_CLOCK_FREQ / 1000000); // count of ns in one tick, multiplied by 256 to lower the dividing error;
         for (; rd_idx < data_sz; rd_idx++)
         {
             register uint16_t last_tick = buf[rd_idx];
             register uint16_t now_tick = buf[rd_idx + 1];
             uint32_t delta_tick;
             if (now_tick < last_tick)
-                delta_tick = now_tick + cycle - last_tick;
+                delta_tick = now_tick + DEFAULT_PWM_PERIOD - last_tick;
             else
                 delta_tick = now_tick - last_tick;
             user_buf[rd_idx] = delta_tick * scale / 256;
@@ -369,42 +381,84 @@ int Pwm::recv_pulses(uint32_t *pulses, uint32_t sz)
     rd_idx = 0;
     user_buf = pulses;
     rd_sz = sz;
+    *tim_pr = DEFAULT_PWM_PERIOD - 1; // maximize the measuring range
     restart_dma();
     return 0;
 }
 
-uint32_t high_pulse;
+Pwm *pwm_tim3 = nullptr;
+PwmIf::Callback tim3_callback = nullptr;
 
-int Pwm::recv_high_pulse()
+void Pwm::set_mode(Mode mode)
 {
-    return 0;
-}
-
-void Pwm::set_polarity(int edge)
-{
-    if (edge > 0)
+    pwm_tim3 = nullptr;
+    tim3_callback = nullptr;
+    switch (mode)
+    {
+    case PWM_OUTPUT:
         cctrl_out_value = cctrl_out_high_value;
-    else
+        dma_release();
+        *tim_iden &= it_disable;
+        io_dir = OUTPUT;
+        switch2output();
+        break;
+    case UP_PULSE_CAPTURE:
+        set_freq(250);
+        dma_config();
+        cctrl_in_value = cctrl_in_high_value;
+        io_dir = INPUT;
+        switch2input();
+        pwm_tim3 = this;
+        tim3_callback = callback;
+        *tim_pr = DEFAULT_PWM_PERIOD - 1;
+        *tim_iden = it_enable;
+        break;
+    case PULSE_OUTPUT_CAPTURE:
+        set_freq(2000);
+        dma_config();
+        cctrl_in_value = cctrl_in_both_value;
         cctrl_out_value = cctrl_out_low_value;
+        *tim_iden &= it_disable;
+        io_dir = INPUT;
+        switch2input();
+        break;
+    default:
+        break;
+    }
 }
+
+void Pwm::set_up_pulse_callback(Callback cb)
+{
+    callback = cb;
+    tim3_callback = callback;
+}
+
+volatile uint32_t &tim3_ists = TMR3->ists;
+volatile uint32_t &tim3_cctrl = TMR3->cctrl;
 
 void TMR3_GLOBAL_IRQHandler(void)
 {
-    extern uint32_t pulse;
-    static uint8_t bit = 0;
-    static uint32_t start = 0;
-    uint32_t end;
-    TMR3->ists = 0;
-    if (bit == 0)
-        start = TMR3->c1dt;
+    static uint32_t start_tick = 0;
+    tim3_ists = 0;
+    if (tim3_cctrl == pwm_tim3->cctrl_in_high_value)
+    {
+        tim3_cctrl = pwm_tim3->cctrl_in_low_value;
+        start_tick = *pwm_tim3->tim_cdt;
+    }
     else
     {
-        end = TMR3->c1dt;
-        if (end < start)
-            pulse = TMR3->pr + 1 - start + end;
-        else
-            pulse = end - start;
+        tim3_cctrl = pwm_tim3->cctrl_in_high_value;
+        if (tim3_callback)
+        {
+            uint32_t tick = *pwm_tim3->tim_cdt;
+            if (tick < start_tick)
+                tick = tick + DEFAULT_PWM_PERIOD - start_tick;
+            else
+                tick -= start_tick;
+
+            uint32_t scale = 256 * 1000 * 16 / (SYS_CLOCK_FREQ / 1000000); // count of ns in one tick, multiplied by 256 to lower the dividing error;
+            uint32_t pulse = tick * scale / 256;
+            tim3_callback(pulse);
+        }
     }
-    bit = !bit;
-    TMR3->cctrl_bit.c1p = bit;
 }
