@@ -35,7 +35,7 @@ uint32_t Adc::sample_voltage(void) const
 
 uint32_t Adc::sample_temperature(void) const
 {
-    return (sample_voltage() - 1280) * 10 / 43 + 25;
+    return ((int)sample_voltage() - 1280) * 10 / 43 + 25;
 }
 
 AdcIf *AdcIf::new_instance(Pin pin)

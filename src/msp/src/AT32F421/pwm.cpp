@@ -211,12 +211,12 @@ Pwm::~Pwm()
 }
 
 // dutycycle 0.0000 ~ 1.0
-void Pwm::set_dutycycle(float dutycycle)
+void Pwm::set_dutycycle(uint32_t dutycycle)
 {
     if (__builtin_expect(this->dutycycle == dutycycle, false))
         return;
     this->dutycycle = dutycycle;
-    *tim_cdt = dutycycle * cycle;
+    *tim_cdt = dutycycle * cycle / 2000;
 }
 
 void Pwm::set_freq(uint32_t freq)
@@ -233,7 +233,7 @@ void Pwm::set_freq(uint32_t freq)
     }
     *tim_div = div - 1; // attention: the div value will only take effect in the next cycle, so there is some delay according to the cycle length
     *tim_pr = cycle - 1;
-    *tim_cdt = dutycycle * cycle;
+    *tim_cdt = dutycycle * cycle / 2000;
 }
 
 uint32_t Pwm::get_duty() const

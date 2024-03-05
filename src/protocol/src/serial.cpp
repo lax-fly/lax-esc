@@ -46,7 +46,7 @@ void Serial::proccess(void)
                 p += 9;
             }
             int value = strtod(p, nullptr);
-            motor->set_throttle(value / 2000.0f);
+            motor->set_throttle(0);
             restart();
         }
         else if (process_idx == sizeof(rx_buf) / sizeof(rx_buf[0]))

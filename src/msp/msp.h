@@ -38,6 +38,8 @@ enum Pin
     PIN_MAX
 };
 
+#define DUTY_CYCLE(x) ((uint32_t)(x * 2000))
+
 // interfaces definition
 
 class PwmIf
@@ -56,7 +58,7 @@ public:
 
     // interfaces below are time sensitive, make them run as fast as possible
     /****************************** functions for PWM_OUTPUT mode only ******************************/ 
-    virtual void set_dutycycle(float dutycycle) = 0; // 0.0~1.0
+    virtual void set_dutycycle(uint32_t dutycycle) = 0; // 0-2000 map to 0.0~1.0
     /**
      * @brief set frequency, valid range: 1Hz~10MHz
      * when in pwm INPUT mode, this can set the measuring pulse range(max pulse 1/freq),

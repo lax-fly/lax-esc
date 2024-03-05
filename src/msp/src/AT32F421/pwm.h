@@ -17,7 +17,7 @@ private:
         OUTPUT = 1, // to output pwm, polarity is low(idle high)
     }io_dir;
 
-    float dutycycle;
+    uint32_t dutycycle; // 0-2000 map to 0.0-1.0
     uint32_t freq;
     uint16_t duty;
     uint32_t cycle;
@@ -77,7 +77,7 @@ public:
     Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma);
     ~Pwm();
     virtual void set_mode(Mode mode = PWM_OUTPUT);
-    virtual void set_dutycycle(float dutycycle);
+    virtual void set_dutycycle(uint32_t dutycycle);
     virtual void set_freq(uint32_t freq);
     virtual uint32_t get_duty() const;  // return the pwm duty length
     virtual uint32_t get_cycle() const; // return the pwm cycle length

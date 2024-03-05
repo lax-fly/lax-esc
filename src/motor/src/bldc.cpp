@@ -27,12 +27,12 @@ enum Angle
 
 /*********************** motor parameters *****************************/
 
-static float throttle = 0;              // 0~1
-static float min_throttle = 0.05f;      // for 3S. Grow it if motor won't startup with batery below 3S or bigger startup moment
-static uint32_t polar_cnt = 14;         // the polar count of the target motor
-static uint32_t kv = 1400;              // rpm/v while empty load, used to judge current load
-static uint32_t blind_interval = 20000; // us
-static uint32_t startup_freq = 5000;    // Hz
+static uint32_t throttle = 0;                     // 0~1
+static uint32_t min_throttle = DUTY_CYCLE(0.05f); // for 3S. Grow it if motor won't startup with batery below 3S or bigger startup moment
+static uint32_t polar_cnt = 14;                   // the polar count of the target motor
+static uint32_t kv = 1400;                        // rpm/v while empty load, used to judge current load
+static uint32_t blind_interval = 20000;           // us
+static uint32_t startup_freq = 5000;              // Hz
 static Angle commutate_angle = ANGLE_30;
 static uint32_t bemf_threshold = 50;  // mV
 static uint32_t max_pwm_freq = 50000; // Hz
@@ -43,7 +43,7 @@ static uint32_t voltage_gain = 11;    // the read voltage value divided by volta
 
 #define ARRAY_CNT(x) (sizeof(x) / sizeof(x[0]))
 
-static void set_dutycycle(float dutycycle);
+static void set_dutycycle(uint32_t dutycycle);
 static void set_frequency(uint32_t pwm_freq);
 static int Commutate(int step);
 static int zero_cross_check(int current_step);
@@ -80,7 +80,7 @@ static uint32_t heavy_load_erpm = 0;    // erpm
 static uint32_t turn_dir_erpm = 0;
 static uint32_t erpm = 0;
 static uint32_t pwm_freq = 0;
-static float pwm_dutycycle = 0;
+static uint32_t pwm_dutycycle = 0;
 static uint32_t demag = UINT32_MAX;
 static uint32_t speed_change_limit = 0;
 static int spin_direction = 0; // 1: forward -1: backward
@@ -156,9 +156,9 @@ void BA(void)
     lc->unset();
 }
 
-void set_dutycycle(float dutycycle)
+void set_dutycycle(uint32_t dutycycle)
 {
-    assert(dutycycle <= 1);
+    assert(dutycycle <= 2000);
     ha->set_dutycycle(dutycycle);
     hb->set_dutycycle(dutycycle);
     hc->set_dutycycle(dutycycle);
@@ -211,13 +211,13 @@ Bldc::Bldc()
     adc_cur = AdcIf::new_instance(ADC_CUR_PIN);
     set_throttle(0);
     batery_voltage = adc_bat->sample_voltage() * voltage_gain;
-    batery_voltage = 8000;//batery_voltage < VOLTAGE_1S ? VOLTAGE_1S : batery_voltage;
+    batery_voltage = 8000; // batery_voltage < VOLTAGE_1S ? VOLTAGE_1S : batery_voltage;
     heavy_load_erpm = batery_voltage * kv / 1000 * polar_cnt / 2 / 4;
     turn_dir_erpm = 450 * polar_cnt / 2;
 
-    min_throttle = 0.0004f * 1000 * kv / batery_voltage; // 0.0004 = 0.05 * 11v / 1400kv
-    if (min_throttle < 0.05f)
-        min_throttle = 0.05f;
+    min_throttle = 0.8f * 1000 * kv / batery_voltage; // 0.0004 = 0.05 * 11v / 1400kv
+    if (min_throttle < DUTY_CYCLE(0.05f))
+        min_throttle = DUTY_CYCLE(0.05f);
 
     timer->timing_task_1ms(routine_1kHz, nullptr);
 }
@@ -238,16 +238,16 @@ void routine_1kHz(void *data) // this determines pwm update frequency
       careful to grow this, the faster, the easier to stall.
       I've tried 0.02, which is ok, but I use 0.01 for stability.
       */
-        pwm_dutycycle += 0.01f;
+        pwm_dutycycle += 20;
     }
     else
         pwm_dutycycle = throttle; // speeding down immediately is permitted
 
-    if (pwm_dutycycle > 1)
-        pwm_dutycycle = 1;
+    if (pwm_dutycycle > 2000)
+        pwm_dutycycle = 2000;
 
     // prevent motor from burning when stuck(or heavily loaded), the dutycycle will only cause motor to beep when stuck
-    if (erpm < (uint32_t)(pwm_dutycycle * heavy_load_erpm))
+    if (erpm < (uint32_t)(pwm_dutycycle * heavy_load_erpm / 2000))
         pwm_dutycycle = min_throttle;
 
     if (braking)
@@ -433,7 +433,7 @@ int Bldc::get_current() const
     return adc_cur->sample_voltage() * current_gain;
 }
 
-void Bldc::set_throttle(float v)
+void Bldc::set_throttle(int v)
 {
     bool dir_changed = false;
     if (v >= 0)
@@ -532,13 +532,13 @@ void Bldc::beep(uint32_t freq, VolumeLevel volume)
         set_dutycycle(0);
         break;
     case MotorIf::VOLUME_LOW:
-        set_dutycycle(0.01f);
+        set_dutycycle(DUTY_CYCLE(0.01f));
         break;
     case MotorIf::VOLUME_MID:
-        set_dutycycle(0.03f);
+        set_dutycycle(DUTY_CYCLE(0.03f));
         break;
     case MotorIf::VOLUME_HIGH:
-        set_dutycycle(0.07f);
+        set_dutycycle(DUTY_CYCLE(0.07f));
         break;
 
     default:

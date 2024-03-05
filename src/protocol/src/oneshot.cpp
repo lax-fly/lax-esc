@@ -11,7 +11,7 @@ static TimerIf *timer;
 static uint32_t run_time = 0;
 static bool data_updated = false;
 
-extern float throttle;
+extern int throttle;
 extern MotorIf *motor;
 
 Oneshot::Oneshot()
@@ -31,10 +31,8 @@ void Oneshot::poll(void)
         run_time = now + 5;
         frame_err++;
 
-        if (data_updated && throttle < 0.05f)
+        if (data_updated && throttle < 100)
             motor->arm(true);
-
-        motor->set_throttle(throttle);
     }
 }
 
@@ -225,14 +223,15 @@ void Oneshot::bind(Pin pin)
             else if (p > max_pulse)
             {
                 frame_err++;
-                throttle = 1;
+                throttle = 2000;
             }
             else
             {
                 data_updated = true;
                 frame_err = 0;
-                throttle = (p - min_pulse) * 1.0f / (max_pulse - min_pulse);
+                throttle = (p - min_pulse) * 2000 / (max_pulse - min_pulse);
             }
+            motor->set_throttle(throttle);
         });
     calibration();
     printf("max pulse: %lu min pulse: %lu\n", max_pulse, min_pulse);

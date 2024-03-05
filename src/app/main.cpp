@@ -31,7 +31,7 @@ enum State
 static State state = IDLE;
 uint32_t dshot_bits;
 Protocol::Type proto_type;
-float throttle;
+int throttle;
 
 #define PRINT_RPM 1
 #define PRINT_DSHOT_DATA 2
@@ -85,7 +85,7 @@ void pwm_test(void)
 #if PWM_TEST == 1
     PwmIf *pwm = PwmIf::new_instance(PA9);
     pwm->set_freq(1000);
-    pwm->set_dutycycle(0.5f);
+    pwm->set_dutycycle(DUTY_CYCLE(0.5f));
     while (1)
     {
     }
@@ -155,7 +155,6 @@ int main(void)
     sound->throttle_signal_detected_tone();
     while (1) // don't make one loop take more than 10us
     {
-        uint32_t t = timer->now_us();
         if (proto->signal_lost())
         {
             proto_type = Protocol::auto_detect(PA6);

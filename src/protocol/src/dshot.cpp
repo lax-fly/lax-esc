@@ -74,11 +74,11 @@ static uint8_t cmd_repeat = 0;
 static uint8_t beacon_mode = 0;
 static bool mode_3d = false;
 static bool spin_dir_reverse = false;
-static uint32_t throttle = 0;
+static int throttle = 0;
 
-static bool send_temparature = true;
-static bool send_current = true;
-static bool send_voltage = true;
+static bool send_temparature = false;
+static bool send_current = false;
+static bool send_voltage = false;
 static bool send_status = false;
 static uint32_t send_temparature_time = 0;
 static uint32_t send_current_time = 300;
@@ -234,7 +234,7 @@ void dshot_process(uint32_t dshot_bits)
         if (value > 47)
         {
             throttle = value - 47;
-            motor->set_throttle(throttle / 2000.0f);
+            motor->set_throttle(throttle);
         }
         break;
     }
@@ -418,13 +418,13 @@ void send_telemetry(void)
     else if (send_voltage)
     {
         send_voltage = false;
-        send_value = 12;                       // adc_volt->sample_voltage() / 250;
+        send_value = adc_volt->sample_voltage() / 250;
         send_value = 0x400 | (send_value * 4); // step 0.25v
     }
     else if (send_temparature)
     {
         send_temparature = false;
-        send_value = 26;                 // adc_temp->sample_temperature();
+        send_value = adc_temp->sample_temperature() & 0xff;
         send_value = 0x200 | send_value; // step 1 Celsius degree
     }
     else
