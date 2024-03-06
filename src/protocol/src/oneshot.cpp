@@ -2,17 +2,20 @@
 #include "stdio.h"
 #include "motor.h"
 
-static volatile uint32_t pulse = 0;
+static volatile int pulse = 0;
 static PwmIf *pwm = nullptr;
 static uint32_t frame_err = 0;
-static uint32_t min_pulse;
-static uint32_t max_pulse;
+static int min_pulse;
+static int max_pulse;
 static TimerIf *timer;
 static uint32_t run_time = 0;
 static bool data_updated = false;
 
 extern int throttle;
 extern MotorIf *motor;
+
+#define ARRAY_SZ(x) (sizeof(x) / sizeof(x[0]))
+#define DEAD_AREA 50
 
 Oneshot::Oneshot()
 {
@@ -31,7 +34,7 @@ void Oneshot::poll(void)
         run_time = now + 5;
         frame_err++;
 
-        if (data_updated && throttle < 100)
+        if (data_updated && throttle < DEAD_AREA)
             motor->arm(true);
     }
 }
@@ -44,23 +47,23 @@ bool Oneshot::signal_lost()
     return res;
 }
 
-uint32_t calc_average(uint32_t data)
+int calc_average(int data)
 {
     static uint32_t sum = 0;
     static uint32_t i = 0;
-    static uint32_t buf[100] = {0};
+    static uint32_t buf[64] = {0};
     sum = sum + data - buf[i];
     buf[i++] = data;
-    if (i >= 100)
+    if (i >= ARRAY_SZ(buf))
         i = 0;
-    return sum / 100;
+    return sum / ARRAY_SZ(buf);
 }
 
 void calibrate_shot(uint32_t low, uint32_t high)
 {
     max_pulse = high;
     min_pulse = low;
-    uint32_t mid_v = (high + low) / 2;
+    int mid_v = (int)(high + low) / 2;
 
     if (pulse < mid_v)
         return;
@@ -215,26 +218,28 @@ void Oneshot::bind(Pin pin)
         [](uint32_t p)
         {
             pulse = p;
-            if (p < min_pulse)
+            if (pulse < min_pulse - 100)
             {
                 frame_err++;
-                throttle = 0;
             }
-            else if (p > max_pulse)
+            else if (pulse > max_pulse + 100)
             {
                 frame_err++;
-                throttle = 2000;
             }
             else
             {
                 data_updated = true;
                 frame_err = 0;
-                throttle = (p - min_pulse) * 2000 / (max_pulse - min_pulse);
             }
+            throttle = (pulse - min_pulse) * 2000 / (max_pulse - min_pulse);
+            if (throttle < DEAD_AREA) // dead area
+                throttle = 0;
+            if (throttle > 2000)
+                throttle = 2000;
             motor->set_throttle(throttle);
         });
     calibration();
-    printf("max pulse: %lu min pulse: %lu\n", max_pulse, min_pulse);
+    printf("max pulse: %d min pulse: %d\n", max_pulse, min_pulse);
     timer->delay_ms(10);
 }
 
