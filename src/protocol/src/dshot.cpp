@@ -95,7 +95,6 @@ AdcIf *adc_temp;
 AdcIf *adc_volt;
 AdcIf *adc_curr;
 
-static void send_telemetry(void);
 static void restart(void);
 static void proccess(void);
 static void receive_dealing();
@@ -252,7 +251,7 @@ void proccess(void)
     if (__builtin_expect(freq_lock < 3, false))
     { // auto calc the period when disarmed
         uint32_t period;
-        if (buffer[30] < buffer[0], false)
+        if (buffer[30] < buffer[0])
             period = (uint32_t)(buffer[30] + 65536 - buffer[0]) / 15;
         else
             period = (uint32_t)(buffer[30] - buffer[0]) / 15;
@@ -335,11 +334,10 @@ uint32_t encode2dshot_bits(uint32_t data)
     crc_sum ^= (data & 0xf0) >> 4;
     crc_sum ^= (data & 0xf00) >> 8;
     crc_sum = ~crc_sum & 0xf;
-    data = (data << 4) | crc_sum;
-    uint32_t encode_data = gcr_table[data & 0xf];
-    encode_data |= gcr_table[(data & 0xf0) >> 4] << 5;
-    encode_data |= gcr_table[(data & 0xf00) >> 8] << 10;
-    encode_data |= gcr_table[(data & 0xf000) >> 12] << 15;
+    uint32_t encode_data = gcr_table[crc_sum];
+    encode_data |= gcr_table[(data & 0xf)] << 5;
+    encode_data |= gcr_table[(data & 0xf0) >> 4] << 10;
+    encode_data |= gcr_table[(data & 0xf00) >> 8] << 15;
     uint32_t dshot_bits = 0;
     uint32_t last_bit = 0;
     encode_data <<= (32 - 20);
