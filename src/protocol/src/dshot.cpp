@@ -51,7 +51,8 @@ typedef enum
 
 enum State
 {
-    TO_SEND,
+    PREPARING,
+    PREPARED,
     SENDING,
     RECEIVE,
 };
@@ -304,7 +305,7 @@ void proccess(void)
     else if (crc_sum == 0xf) // dshot2d
     {
         dshot_process(dshot_bits >> 4);
-        send_telemetry();
+        state = PREPARING;
         frame_err = 0;
     }
 }
@@ -359,10 +360,9 @@ uint32_t encode2dshot_bits(uint32_t data)
     return dshot_bits;
 }
 
-void send_package(void)
-{
-    state = TO_SEND;
 
+void fill_send_buffer(void)
+{
     uint32_t data = 0;
     data = encode2dshot_bits(send_value);
 
@@ -402,13 +402,13 @@ void scheduling_telemetry(void)
     }
 }
 
-void send_telemetry(void)
+void send_prepare(void)
 {
     if (send_status)
     {
         send_status = false;
         send_value = 0xE00 | send_value;
-        send_package();
+        fill_send_buffer();
         return;
     }
 
@@ -437,7 +437,7 @@ void send_telemetry(void)
     {
         goto SEND_ERPM;
     }
-    send_package();
+    fill_send_buffer();
     return;
 
 SEND_ERPM: // actually, the data sended is the period of erpm (1/erpm)
@@ -451,7 +451,7 @@ SEND_ERPM: // actually, the data sended is the period of erpm (1/erpm)
     }
     send_value = (E << 9) + send_value;
 
-    send_package();
+    fill_send_buffer();
 }
 
 void receive_dealing()
@@ -473,10 +473,17 @@ void send_dealing()
     if (now_us < resp_time)
         return;
 
-    if (state == TO_SEND)
+    if (state == PREPARING)
     {
-        state = SENDING;
+        send_prepare();
+        state = PREPARED;
+        return;
+    }
+
+    if (state == PREPARED)
+    {
         pwm->send_pulses(buffer, 21, period45);
+        state = SENDING;
         return;
     }
 
