@@ -59,7 +59,7 @@ enum State
 static TimerIf *timer;
 static PwmIf *pwm;
 static uint64_t run_time;
-static uint32_t buffer[32];
+static uint16_t buffer[32];
 static int rd_sz;
 static State state;
 static uint64_t resp_time;
@@ -135,9 +135,9 @@ Dshot::~Dshot()
 
 void restart(void)
 {
-    rd_sz = 0;
+    rd_sz = sizeof(buffer) / sizeof(buffer[0]);
     if (state == RECEIVE)
-        pwm->recv_pulses(buffer, sizeof(buffer) / sizeof(buffer[0]));
+        pwm->recv_pulses(buffer, rd_sz);
 }
 
 void dshot_process(uint32_t dshot_bits)
@@ -242,7 +242,7 @@ void dshot_process(uint32_t dshot_bits)
 
 void proccess(void)
 {
-    if (rd_sz < 31) // it won't rise at the end of the last pulse
+    if (rd_sz > 0) // it won't rise at the end of the last pulse
         return;
 
     resp_time = now_us + 25; // 30us, 5us for error
@@ -250,22 +250,27 @@ void proccess(void)
 
     if (__builtin_expect(freq_lock < 3, false))
     { // auto calc the period when disarmed
-        uint32_t period = 0;
-        for (uint32_t i = 0; i < 15; i++)
-        {
-            register uint32_t high = buffer[i * 2];
-            register uint32_t low = buffer[(i * 2) + 1];
-            period += high + low;
-            if (high > low)
-                dshot_bits |= 1;
-
-            dshot_bits <<= 1;
-        }
-        period /= 15;
+        uint32_t period;
+        if (buffer[30] < buffer[0], false)
+            period = (uint32_t)(buffer[30] + 65536 - buffer[0]) / 15;
+        else
+            period = (uint32_t)(buffer[30] - buffer[0]) / 15;
         half_period = period / 2;
+        for (uint32_t i = 0; i < 32; i+=2)
+        {
+            dshot_bits <<= 1;
+            register uint32_t low = buffer[i];
+            register uint32_t high = buffer[i + 1];
+            uint32_t pulse = high;
+            if (high < low)
+                pulse += 65536;
+            pulse -= low;
+            if (pulse > half_period)
+                dshot_bits |= 1;
+        }
         uint32_t tmp = period * 4 / 5;
         uint32_t delta = period45 > tmp ? period45 - tmp : tmp - period45;
-        if (period45 && delta < 500)
+        if (period45 && delta < 50)
             freq_lock++;
         else
             freq_lock = 0;
@@ -273,19 +278,20 @@ void proccess(void)
     }
     else
     {
-        for (uint32_t i = 0; i < 15; i++)
+        for (uint32_t i = 0; i < 32; i+=2)
         {
-            register uint32_t high = buffer[i * 2];
-            if (high > half_period)
-                dshot_bits |= 1;
-
             dshot_bits <<= 1;
+            register uint32_t low = buffer[i];
+            register uint32_t high = buffer[i + 1];
+            uint32_t pulse = high;
+            if (__builtin_expect(high < low, false))
+                pulse += 65536;
+            pulse -= low;
+            if (pulse > half_period)
+                dshot_bits |= 1;
         }
     }
 
-    uint32_t pulse = buffer[30];
-    if (pulse > half_period) // deal with the last bit
-        dshot_bits |= 1;
     uint32_t crc_sum = dshot_bits;
     crc_sum ^= crc_sum >> 8;
     crc_sum ^= crc_sum >> 4;
@@ -452,7 +458,7 @@ void receive_dealing()
 {
     proccess(); // one byte once to avoid long time cpu occupation
     int rd_sz = pwm->recv_pulses();
-    if (rd_sz == 0)
+    if (rd_sz == sizeof(buffer) / sizeof(buffer[0]))
         return;
     if (rd_sz == ::rd_sz)
     { // no byte received over 20us, so restart frame
@@ -503,9 +509,6 @@ void Dshot::poll(void)
 bool Dshot::signal_lost()
 {
     bool res = frame_err > 50000;
-    static uint32_t max = 0;
-    if (frame_err > max)
-        max = frame_err;
     if (res)
         motor->arm(false);
     return res;

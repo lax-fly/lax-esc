@@ -302,7 +302,7 @@ void Pwm::switch2input()
         *dma_ctrl = dma_p2m;
 }
 
-int Pwm::send_pulses(const uint32_t *pulses, uint32_t sz, uint32_t period)
+int Pwm::send_pulses(const uint16_t *pulses, uint32_t sz, uint32_t period)
 {
     assert(sz < BUF_SIZE);
     if (io_dir != OUTPUT)
@@ -314,15 +314,10 @@ int Pwm::send_pulses(const uint32_t *pulses, uint32_t sz, uint32_t period)
     if (!pulses)
         return *dma_dtcnt;
 
-    uint32_t i = 0;
-    *tim_pr = period * (SYS_CLOCK_FREQ / 1000000) / 1000 - 1;
-    for (; i < sz; i++) // cost about 3us
-    {
-        uint32_t ticks = pulses[i] * (SYS_CLOCK_FREQ / 1000000) / 1000; // map the pulse time to ticks
-        buf[i] = ticks;
-    }
-    buf[i] = 0;
+    *tim_pr = period - 1;
+    ((uint16_t *)pulses)[sz] = 0;
     *dma_ctrl &= ~1; // disable dma channel
+    *dma_maddr = (uint32_t)pulses;
     *dma_dtcnt = sz + 1;
     *dma_ctrl |= 1; // enable dma channel
     return 0;
@@ -330,7 +325,7 @@ int Pwm::send_pulses(const uint32_t *pulses, uint32_t sz, uint32_t period)
 
 #pragma GCC push_options
 #pragma GCC optimize("O0")
-inline void Pwm::restart_dma()
+inline void Pwm::restart_dma(uint16_t* buf)
 {
     if (!dma_ctrl)
         return;
@@ -338,15 +333,16 @@ inline void Pwm::restart_dma()
     register uint32_t disable_dma = tmp & ~1; // unset dma enable bit
     register uint32_t enable_dma = tmp | 1;   // set dma enable bit
     *dma_ctrl = disable_dma;
-    *dma_dtcnt = rd_sz + 1;
+    *dma_dtcnt = rd_sz;
+    *dma_maddr = (uint32_t)buf;
     *dma_ctrl = enable_dma;
     *dma_ctrl = disable_dma; // first restart to clear the last cached DMA event, which is not expected, it may be at32's bug
-    *dma_dtcnt = rd_sz + 1;
+    *dma_dtcnt = rd_sz;
     *dma_ctrl = enable_dma;
 }
 #pragma GCC pop_options
 
-int Pwm::recv_pulses(uint32_t *pulses, uint32_t sz)
+int Pwm::recv_pulses(uint16_t *pulses, uint32_t sz)
 { // support max frame length 500us, which is far more enough for dshot150 to dshot 1200
     assert(sz < BUF_SIZE);
 
@@ -358,32 +354,13 @@ int Pwm::recv_pulses(uint32_t *pulses, uint32_t sz)
 
     if (__builtin_expect(pulses == nullptr, true))
     {
-        if (__builtin_expect(!user_buf, 0))
-            return 0;
-        int data_sz = rd_sz - (int)*dma_dtcnt;
-        if (rd_idx >= data_sz)
-            return rd_idx; // no new data
-
-        uint32_t scale = 256 * 1000 / (SYS_CLOCK_FREQ / 1000000); // count of ns in one tick, multiplied by 256 to lower the dividing error;
-        for (; rd_idx < data_sz; rd_idx++)
-        {
-            register uint16_t last_tick = buf[rd_idx];
-            register uint16_t now_tick = buf[rd_idx + 1];
-            uint32_t delta_tick;
-            if (now_tick < last_tick)
-                delta_tick = now_tick + DEFAULT_PWM_PERIOD - last_tick;
-            else
-                delta_tick = now_tick - last_tick;
-            user_buf[rd_idx] = delta_tick * scale / 256;
-        }
-        return rd_idx;
+        return (int)*dma_dtcnt;
     }
     rd_idx = 0;
-    user_buf = pulses;
     rd_sz = sz;
     *tim_pr = DEFAULT_PWM_PERIOD - 1; // maximize the measuring range
-    restart_dma();
-    return 0;
+    restart_dma(pulses);
+    return sz;
 }
 
 Pwm *pwm_tim3 = nullptr;

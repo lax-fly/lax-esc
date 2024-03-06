@@ -228,11 +228,7 @@ Bldc::~Bldc()
 
 void routine_1kHz(void *data) // this determines pwm update frequency
 {
-    if (throttle < min_throttle / 2) // throttle below min_throttle / 2 is treated as dead area
-        pwm_dutycycle = 0;
-    else if (throttle < min_throttle) // motor needs at least min_throttle throttle to startup
-        pwm_dutycycle = min_throttle;
-    else if (pwm_dutycycle < throttle)
+    if (pwm_dutycycle < throttle)
     { /*
       limit speed up rate, throttle 0->1 requires 100ms.
       careful to grow this, the faster, the easier to stall.
@@ -278,10 +274,7 @@ void update_state(void)
 
     sum = sum - buf[i] + intval;
 
-    if (buf[i] != 0)
         zero_interval = sum / ARRAY_CNT(buf);
-    else
-        zero_interval = sum / (i + 1);
 
     buf[i++] = intval;
     if (i >= ARRAY_CNT(buf))

@@ -74,9 +74,10 @@ public:
     
     /****************************** functions for PULSE_OUTPUT_CAPTURE mode only ******************************/ 
     /**
-     * @brief write a array of pulse in ns to the output, set pulses to null to check if last write is finished
+     * @brief write a array of pulses in ticks to the output, set pulses to null to check if last write is finished
      * if last write is finished, return 0, or return -1. send_pulses is asynchronous, works with set_freq function
-     * @param pulses will be copied internally, unit ns, the value range should be support up to 500000ns.
+     * @param pulses ouput pulses width in ticks, unit insensitive. but should be identical to that of recv_pulses
+     * will be copied internally, unit ns, the value range should be support up to 500000ns.
      * when pulses=null, the function should return the data count left to be sent after last call with pulses!=0.
      * @note send_pulses function is not required to support multiple pins when using the same timer. let me put this in another way:
      * many mcu use timer peripheral to generate/capture pwm, and one timer support at most 4 channel(pins), but for efficiency,
@@ -84,16 +85,16 @@ public:
      * in the meantime, the esc application will use only one pin to call send_pulses function
      * @return data count left to be sent
      */
-    virtual int send_pulses(const uint32_t *pulses = 0, uint32_t sz = 0, uint32_t period = 0) = 0;
+    virtual int send_pulses(const uint16_t *pulses = 0, uint32_t sz = 0, uint32_t period = 0) = 0;
     /**
-     * @brief measuring the input pulses in ns, and save them in buffer 'pulses'.
+     * @brief measures the input pulses width in ticks, and save them in buffer 'pulses' which is unit insensitive.
      * recv_pulses measures both edge, so |```|___| is treated as two pulses(up pulse and down pulse)，
      * notice that recv_pulses doesn't care about polarity, in other words, the 'pulses' dosen't indicate the direction but only the pulse width.
      * when pulses=null, the function should return the data count received after last call with pulses!=0.
      * @return currently received pulses
      * @note reffer to send_pulses function
      */
-    virtual int recv_pulses(uint32_t *pulses = 0, uint32_t sz = 0) = 0;
+    virtual int recv_pulses(uint16_t *pulses = 0, uint32_t sz = 0) = 0;
     /****************************** functions for PULSE_OUTPUT_CAPTURE mode only ******************************/ 
 
     /****************************** functions for UP_PULSE_CAPTURE mode only ******************************/ 
@@ -138,6 +139,7 @@ public:
     virtual uint8_t cmp_result() const = 0;
     // out_pin is not necessary, and used for debug, set out_pin to PIN_NONE when not used;
     static ComparatorIf *new_instance(Pin pos_pin, Pin neg_pin, Pin out_pin);
+    static void set_callback(void (*cb)());
 };
 
 class AdcIf

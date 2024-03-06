@@ -65,7 +65,7 @@ private:
     void switch2output();
     void switch2input();
     inline void tim_config(tmr_type *tim, tmr_channel_select_type ch);
-    inline void restart_dma();
+    inline void restart_dma(uint16_t* buf);
     inline void dma_config();
     inline void dma_release();
 
@@ -84,7 +84,7 @@ public:
     virtual uint32_t get_pos() const;   // return the current pwm output position in the cycle
     virtual void enable();
     virtual void disable();
-    virtual int send_pulses(const uint32_t *pulses, uint32_t sz, uint32_t period); // async
-    virtual int recv_pulses(uint32_t *pulses, uint32_t sz);
+    virtual int send_pulses(const uint16_t *pulses, uint32_t sz, uint32_t period); // async
+    virtual int recv_pulses(uint16_t *pulses, uint32_t sz);
     virtual void set_up_pulse_callback(Callback cb);
 };
