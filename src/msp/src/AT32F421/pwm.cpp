@@ -17,7 +17,7 @@ struct PwmMap
     dma_channel_type *dma;
 };
 
-PwmMap pwm_maps[] = {
+static PwmMap pwm_maps[] = {
     // each pin must be different from each other.
     {TMR1, PA8, TMR_SELECT_CHANNEL_1, GPIO_MUX_2, DMA1_CHANNEL2},
     {TMR1, PA9, TMR_SELECT_CHANNEL_2, GPIO_MUX_2, DMA1_CHANNEL3},
@@ -146,6 +146,7 @@ inline void Pwm::tim_config(tmr_type *tim, tmr_channel_select_type ch)
     tmr_counter_enable(tim, TRUE);
     nvic_irq_enable(TMR3_GLOBAL_IRQn, 0, 0);
 }
+
 inline void Pwm::dma_release()
 {
     if (dma_ctrl)
@@ -325,7 +326,7 @@ int Pwm::send_pulses(const uint16_t *pulses, uint32_t sz, uint32_t period)
 
 #pragma GCC push_options
 #pragma GCC optimize("O0")
-inline void Pwm::restart_dma(uint16_t* buf)
+inline void Pwm::restart_dma(uint16_t *buf)
 {
     if (!dma_ctrl)
         return;

@@ -41,6 +41,23 @@ enum Pin
 #define DUTY_CYCLE(x) ((uint32_t)(x * 2000))
 
 // interfaces definition
+class MotorPwmIf
+{
+public:
+    virtual ~MotorPwmIf() {}
+    virtual void set_dutycycle(uint32_t dutycycle) = 0; // 0-2000 map to 0.0~1.0
+    /**
+     * @brief set frequency, valid range: 1Hz~10MHz
+     * when in pwm INPUT mode, this can set the measuring pulse range(max pulse 1/freq),
+     * the larger range, the lower accuracy, whatever, the accuracy should be less than 1/freq/4000
+     */
+    virtual void set_freq(uint32_t freq) = 0;
+    virtual void select(Pin pin) = 0;
+    virtual uint32_t get_duty() const = 0;  // return the pwm duty length, unit insensitive(normally the timer tick count)
+    virtual uint32_t get_cycle() const = 0; // return the pwm cycle length, unit insensitive(normally the timer tick count)
+    virtual uint32_t get_pos() const = 0;   // return the current pwm output position in the cycle, unit insensitive(normally the timer tick count)
+    static MotorPwmIf *new_instance(Pin a, Pin b, Pin c);
+};
 
 class PwmIf
 {
@@ -48,9 +65,9 @@ public:
     enum Mode
     {
         // requirements by all mode: output resolution > 2000, input measuring resolution >= 65535, range > 2.5ms
-        PWM_OUTPUT,             // legacy period pwm putput.
-        UP_PULSE_CAPTURE,       // only capture up pulses, and dosen't support output.
-        PULSE_OUTPUT_CAPTURE,   // output pulses and capture pulses，out put polarity is low, capture both up pulse and down pulse.
+        PWM_OUTPUT,           // legacy period pwm putput.
+        UP_PULSE_CAPTURE,     // only capture up pulses, and dosen't support output.
+        PULSE_OUTPUT_CAPTURE, // output pulses and capture pulses，out put polarity is low, capture both up pulse and down pulse.
     };
     virtual ~PwmIf() {}
     // set the PWM work mode, time insensitive, you can do many jobs in this function without worrying about time.

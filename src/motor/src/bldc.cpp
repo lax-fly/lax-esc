@@ -13,7 +13,6 @@ typedef struct
     int step_rise;
     ComparatorIf *cmp;
     AdcIf *adc;
-    PwmIf *pwm;
 } CommutateMap;
 
 enum Angle
@@ -61,9 +60,7 @@ static AdcIf *adc_c;
 static AdcIf *adc_bat;
 static AdcIf *adc_cur;
 
-static PwmIf *ha;
-static PwmIf *hb;
-static PwmIf *hc;
+static MotorPwmIf* pwms;
 
 static GpioIf *la;
 static GpioIf *lb;
@@ -98,78 +95,62 @@ static bool braking = false;
 
 void BC(void)
 {
-    ha->disable();
+    pwms->select(MOS_B_HIGH_PIN);
     la->unset();
-    hb->enable();
     lb->unset();
-    hc->disable();
     lc->set();
 }
 
 void AC(void)
 {
-    ha->enable();
+    pwms->select(MOS_A_HIGH_PIN);
     la->unset();
-    hb->disable();
     lb->unset();
-    hc->disable();
     lc->set();
 }
 
 void AB(void)
 {
-    ha->enable();
+    pwms->select(MOS_A_HIGH_PIN);
     la->unset();
-    hb->disable();
     lb->set();
-    hc->disable();
     lc->unset();
 }
 
 void CB(void)
 {
-    ha->disable();
+    pwms->select(MOS_C_HIGH_PIN);
     la->unset();
-    hb->disable();
     lb->set();
-    hc->enable();
     lc->unset();
 }
 
 void CA(void)
 {
-    ha->disable();
+    pwms->select(MOS_C_HIGH_PIN);
     la->set();
-    hb->disable();
     lb->unset();
-    hc->enable();
     lc->unset();
 }
 
 void BA(void)
 {
-    ha->disable();
+    pwms->select(MOS_B_HIGH_PIN);
     la->set();
-    hb->enable();
     lb->unset();
-    hc->disable();
     lc->unset();
 }
 
 void set_dutycycle(uint32_t dutycycle)
 {
     assert(dutycycle <= 2000);
-    ha->set_dutycycle(dutycycle);
-    hb->set_dutycycle(dutycycle);
-    hc->set_dutycycle(dutycycle);
+    pwms->set_dutycycle(dutycycle);
 }
 
 void set_frequency(uint32_t pwm_freq)
 {
     assert(pwm_freq <= 100000);
-    ha->set_freq(pwm_freq);
-    hb->set_freq(pwm_freq);
-    hc->set_freq(pwm_freq);
+    pwms->set_freq(pwm_freq);
 }
 
 /**
@@ -192,9 +173,7 @@ static CommutateMap commutate_matrix[6] = {0};
 Bldc::Bldc()
 {
     timer = TimerIf::singleton();
-    ha = PwmIf::new_instance(MOS_A_HIGH_PIN);
-    hb = PwmIf::new_instance(MOS_B_HIGH_PIN);
-    hc = PwmIf::new_instance(MOS_C_HIGH_PIN);
+    pwms = MotorPwmIf::new_instance(MOS_A_HIGH_PIN, MOS_B_HIGH_PIN, MOS_C_HIGH_PIN);
     la = GpioIf::new_instance(MOS_A_LOW_PIN);
     lb = GpioIf::new_instance(MOS_B_LOW_PIN);
     lc = GpioIf::new_instance(MOS_C_LOW_PIN);
@@ -312,10 +291,9 @@ int zero_cross_check(int current_step)
 
     uint32_t T = 1000000 / pwm_freq;
 
-    PwmIf *pwm = com_mtx->pwm;
-    uint32_t duty = pwm->get_duty();
-    uint32_t cycle = pwm->get_cycle();
-    uint32_t pos = pwm->get_pos();
+    uint32_t duty = pwms->get_duty();
+    uint32_t cycle = pwms->get_cycle();
+    uint32_t pos = pwms->get_pos();
     uint32_t error = 2 * cycle / T; // make 1us error, based on the cmp's ouput delay along with the startup dutycycle and frequency
     bool stall = 0;
     do // software cmp blanking
@@ -451,21 +429,21 @@ void Bldc::set_throttle(int v)
     // swap any two phase to change the spin direction
     if (spin_direction > 0)
     {
-        commutate_matrix[0] = {BC, 2, 1, cmp_a, adc_a, hb};
-        commutate_matrix[1] = {AC, 2, 3, cmp_b, adc_b, ha};
-        commutate_matrix[2] = {AB, 4, 3, cmp_c, adc_c, ha};
-        commutate_matrix[3] = {CB, 4, 5, cmp_a, adc_a, hc};
-        commutate_matrix[4] = {CA, 0, 5, cmp_b, adc_b, hc};
-        commutate_matrix[5] = {BA, 0, 1, cmp_c, adc_c, hb};
+        commutate_matrix[0] = {BC, 2, 1, cmp_a, adc_a};
+        commutate_matrix[1] = {AC, 2, 3, cmp_b, adc_b};
+        commutate_matrix[2] = {AB, 4, 3, cmp_c, adc_c};
+        commutate_matrix[3] = {CB, 4, 5, cmp_a, adc_a};
+        commutate_matrix[4] = {CA, 0, 5, cmp_b, adc_b};
+        commutate_matrix[5] = {BA, 0, 1, cmp_c, adc_c};
     }
     else if (spin_direction < 0)
     {
-        commutate_matrix[0] = {CB, 2, 1, cmp_a, adc_a, hc};
-        commutate_matrix[1] = {AB, 2, 3, cmp_c, adc_c, ha};
-        commutate_matrix[2] = {AC, 4, 3, cmp_b, adc_b, ha};
-        commutate_matrix[3] = {BC, 4, 5, cmp_a, adc_a, hb};
-        commutate_matrix[4] = {BA, 0, 5, cmp_c, adc_c, hb};
-        commutate_matrix[5] = {CA, 0, 1, cmp_b, adc_b, hc};
+        commutate_matrix[0] = {CB, 2, 1, cmp_a, adc_a};
+        commutate_matrix[1] = {AB, 2, 3, cmp_c, adc_c};
+        commutate_matrix[2] = {AC, 4, 3, cmp_b, adc_b};
+        commutate_matrix[3] = {BC, 4, 5, cmp_a, adc_a};
+        commutate_matrix[4] = {BA, 0, 5, cmp_c, adc_c};
+        commutate_matrix[5] = {CA, 0, 1, cmp_b, adc_b};
     }
 }
 
@@ -473,11 +451,9 @@ void Bldc::stop()
 {
     pwm_dutycycle = 0;
     pwm_freq = startup_freq;
-    ha->disable();
+    pwms->select(PIN_NONE);
     la->set();
-    hb->disable();
     lb->set();
-    hc->disable();
     lc->set();
     braking = true;
 }

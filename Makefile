@@ -149,10 +149,10 @@ endef
 
 define get_include_dir
 	@case $(1) in \
-		*app*) INCLUDE_DIR="$(foreach i,$(APP_LAYER_INCLUDE),-I$(i))";; \
-		*motor*) INCLUDE_DIR="$(foreach i,$(MTR_LAYER_INCLUDE),-I$(i))";; \
-		*msp*) INCLUDE_DIR="$(foreach i,$(MSP_LAYER_INCLUDE),-I$(i))";; \
-		*protocol*) INCLUDE_DIR="$(foreach i,$(PRO_LAYER_INCLUDE),-I$(i))";; \
+		*app/*) INCLUDE_DIR="$(foreach i,$(APP_LAYER_INCLUDE),-I$(i))";; \
+		*motor/*) INCLUDE_DIR="$(foreach i,$(MTR_LAYER_INCLUDE),-I$(i))";; \
+		*msp/*) INCLUDE_DIR="$(foreach i,$(MSP_LAYER_INCLUDE),-I$(i))";; \
+		*protocol/*) INCLUDE_DIR="$(foreach i,$(PRO_LAYER_INCLUDE),-I$(i))";; \
 		*) echo "#######  error object: $(1) ########" ;; \
 	esac; echo -n $${INCLUDE_DIR} > $(BUILD_DIR)/$(dir $(1))/$(notdir $(1)).inc
 endef
