@@ -26,7 +26,7 @@ enum Angle
 
 /*********************** motor parameters *****************************/
 
-static uint32_t throttle = 0;                     // 0~1
+static uint32_t throttle = 0;                     // 0~2000 map to 0.0-1.0
 static uint32_t min_throttle = DUTY_CYCLE(0.05f); // for 3S. Grow it if motor won't startup with batery below 3S or bigger startup moment
 static uint32_t polar_cnt = 14;                   // the polar count of the target motor
 static uint32_t kv = 1400;                        // rpm/v while empty load, used to judge current load
@@ -61,10 +61,7 @@ static AdcIf *adc_bat;
 static AdcIf *adc_cur;
 
 static MotorPwmIf *pwms;
-
-static GpioIf *la;
-static GpioIf *lb;
-static GpioIf *lc;
+static MotorIoIf *io;
 
 static TimerIf *timer;
 
@@ -96,49 +93,37 @@ static bool braking = false;
 void BC(void)
 {
     pwms->select(MOS_B_HIGH_PIN);
-    la->unset();
-    lb->unset();
-    lc->set();
+    io->select(MOS_C_LOW_PIN);
 }
 
 void AC(void)
 {
     pwms->select(MOS_A_HIGH_PIN);
-    la->unset();
-    lb->unset();
-    lc->set();
+    io->select(MOS_C_LOW_PIN);
 }
 
 void AB(void)
 {
     pwms->select(MOS_A_HIGH_PIN);
-    la->unset();
-    lb->set();
-    lc->unset();
+    io->select(MOS_B_LOW_PIN);
 }
 
 void CB(void)
 {
     pwms->select(MOS_C_HIGH_PIN);
-    la->unset();
-    lb->set();
-    lc->unset();
+    io->select(MOS_B_LOW_PIN);
 }
 
 void CA(void)
 {
     pwms->select(MOS_C_HIGH_PIN);
-    la->set();
-    lb->unset();
-    lc->unset();
+    io->select(MOS_A_LOW_PIN);
 }
 
 void BA(void)
 {
     pwms->select(MOS_B_HIGH_PIN);
-    la->set();
-    lb->unset();
-    lc->unset();
+    io->select(MOS_A_LOW_PIN);
 }
 
 void set_dutycycle(uint32_t dutycycle)
@@ -197,12 +182,7 @@ Bldc::Bldc()
 {
     timer = TimerIf::singleton();
     pwms = MotorPwmIf::new_instance(MOS_A_HIGH_PIN, MOS_B_HIGH_PIN, MOS_C_HIGH_PIN);
-    la = GpioIf::new_instance(MOS_A_LOW_PIN);
-    lb = GpioIf::new_instance(MOS_B_LOW_PIN);
-    lc = GpioIf::new_instance(MOS_C_LOW_PIN);
-    la->set_mode(GpioIf::OUTPUT);
-    lb->set_mode(GpioIf::OUTPUT);
-    lc->set_mode(GpioIf::OUTPUT);
+    io = MotorIoIf::new_instance(MOS_A_LOW_PIN, MOS_B_LOW_PIN, MOS_C_LOW_PIN);
     cmp_a = ComparatorIf::new_instance(CMP_A_POS_PIN, CMP_A_NEG_PIN, CMP_OUT_PIN);
     cmp_b = ComparatorIf::new_instance(CMP_B_POS_PIN, CMP_B_NEG_PIN, CMP_OUT_PIN);
     cmp_c = ComparatorIf::new_instance(CMP_C_POS_PIN, CMP_C_NEG_PIN, CMP_OUT_PIN);
@@ -233,9 +213,9 @@ void routine_1kHz(void *data) // this determines pwm update frequency
 {
     if (pwm_dutycycle < throttle)
     { /*
-      limit speed up rate, throttle 0->1 requires 100ms.
+      limit speed up rate, throttle 0->2000 requires 100ms.
       careful to grow this, the faster, the easier to stall.
-      I've tried 0.02, which is ok, but I use 0.01 for stability.
+      I've tried 40, which is ok, but I use 20 for stability.
       */
         pwm_dutycycle += 20;
     }
@@ -246,7 +226,7 @@ void routine_1kHz(void *data) // this determines pwm update frequency
         pwm_dutycycle = 2000;
 
     // prevent motor from burning when stuck(or heavily loaded), the dutycycle will only cause motor to beep when stuck
-    if (erpm < (uint32_t)(pwm_dutycycle * heavy_load_erpm / 2000))
+    if (erpm * 2000 < (uint32_t)(pwm_dutycycle * heavy_load_erpm))
         pwm_dutycycle = min_throttle;
 
     if (braking)
@@ -470,9 +450,7 @@ void Bldc::stop()
     pwm_dutycycle = 0;
     pwm_freq = startup_freq;
     pwms->select(PIN_NONE);
-    la->set();
-    lb->set();
-    lc->set();
+    io->select(PIN_MAX);
     braking = true;
 }
 

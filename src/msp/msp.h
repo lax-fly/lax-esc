@@ -108,8 +108,17 @@ public:
     static SignalPwmIf *new_instance(Pin pin);
 };
 
-class GpioIf
+class MotorIoIf
 {
+public:
+    virtual ~MotorIoIf() {}
+    // select 'pin' to output high and clear other two pins, if pin is none of 'a' 'b' 'c', then all pins will be cleared, if pin = PIN_MAX, then all a,b,c will be set.
+    virtual void select(Pin pin) = 0;
+    static MotorIoIf *new_instance(Pin a, Pin b, Pin c);
+};
+
+class GpioIf
+{ // used for debug only for now
 public:
     enum IoMode
     {
@@ -178,7 +187,7 @@ public:
 };
 
 class CrcIf // crc8
-{   // not used yet
+{           // not used yet
 public:
     virtual void set_start(uint8_t val) = 0;
     virtual void set_poly(uint8_t poly) = 0;
