@@ -26,8 +26,8 @@ Protocol::Type Protocol::auto_detect(Pin pin)
     static Protocol::Type type = BRUSHED;
     TimerIf *timer = TimerIf::singleton();
     reset_protocol();
-    PwmIf *pwm = PwmIf::new_instance(pin);
-    pwm->set_mode(PwmIf::UP_PULSE_CAPTURE); // measuring range: 4ms
+    SignalPwmIf *pwm = SignalPwmIf::new_instance(pin);
+    pwm->set_mode(SignalPwmIf::UP_PULSE_CAPTURE); // measuring range: 4ms
     timer->delay_ms(5);                     // necessary delay
     pwm->set_up_pulse_callback(
         [](uint32_t p)

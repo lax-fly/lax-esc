@@ -83,15 +83,15 @@ uint32_t pulse;
 void pwm_test(void)
 {
 #if PWM_TEST == 1
-    PwmIf *pwm = PwmIf::new_instance(PA9);
+    MotorPwmIf *pwm = MotorPwmIf::new_instance(MOS_A_HIGH_PIN, MOS_B_HIGH_PIN, MOS_C_HIGH_PIN);
     pwm->set_freq(1000);
     pwm->set_dutycycle(DUTY_CYCLE(0.5f));
     while (1)
     {
     }
 #elif PWM_TEST == 2
-    PwmIf *pwm = PwmIf::new_instance(PA6);
-    pwm->set_mode(PwmIf::PULSE_OUTPUT_CAPTURE);
+    SignalPwmIf *pwm = SignalPwmIf::new_instance(PA6);
+    pwm->set_mode(SignalPwmIf::PULSE_OUTPUT_CAPTURE);
     uint32_t pulses[] = {400000, 300000, 10000, 1000};
     while (1)
     {
@@ -99,8 +99,8 @@ void pwm_test(void)
         pwm->send_pulses(pulses, 4, 500000);
     }
 #elif PWM_TEST == 3
-    PwmIf *pwm = PwmIf::new_instance(PA6);
-    pwm->set_mode(PwmIf::PULSE_OUTPUT_CAPTURE);
+    SignalPwmIf *pwm = SignalPwmIf::new_instance(PA6);
+    pwm->set_mode(SignalPwmIf::PULSE_OUTPUT_CAPTURE);
     uint32_t pulses[32];
     while (1)
     {
@@ -120,8 +120,8 @@ void pwm_test(void)
         }
     }
 #elif PWM_TEST == 4
-    PwmIf *pwm = PwmIf::new_instance(PA6);
-    pwm->set_mode(PwmIf::UP_PULSE_CAPTURE);
+    SignalPwmIf *pwm = SignalPwmIf::new_instance(PA6);
+    pwm->set_mode(SignalPwmIf::UP_PULSE_CAPTURE);
     pwm->set_up_pulse_callback([](uint32_t p)
                                { pulse = p; });
     while (1)
@@ -153,7 +153,7 @@ int main(void)
     proto_type = Protocol::auto_detect(PA6);
     proto = Protocol::singleton(proto_type, PA6);
     sound->throttle_signal_detected_tone();
-    while (1) // don't make one loop take more than 10us
+    while (1) // don't make one loop take more than 10us, motor->poll must be called once per <10us
     {
         if (proto->signal_lost())
         {

@@ -8,7 +8,7 @@ extern "C" void TMR3_GLOBAL_IRQHandler(void);
 extern "C" void TMR1_GLOBAL_IRQHandler(void);
 extern "C" void TMR15_GLOBAL_IRQHandler(void);
 
-class Pwm : public PwmIf
+class SignalPwm : public SignalPwmIf
 {
 private:
     enum
@@ -17,17 +17,8 @@ private:
         OUTPUT = 1, // to output pwm, polarity is low(idle high)
     }io_dir;
 
-    uint32_t dutycycle; // 0-2000 map to 0.0-1.0
-    uint32_t freq;
-    uint16_t duty;
-    uint32_t cycle;
-
     uint16_t buf[64];
-    int rd_idx;
-    uint32_t *user_buf;
-    int rd_sz;
 
-    dma_channel_type *dma;
     uint32_t dma_m2p;
     uint32_t dma_p2m;
     volatile uint32_t *dma_ctrl;
@@ -57,7 +48,6 @@ private:
     volatile uint32_t *tim_cm;
     volatile uint32_t *tim_pr;
     volatile uint32_t *tim_div;
-    volatile uint32_t *tim_cval;
     volatile uint32_t *tim_iden;
 
     Callback callback;
@@ -65,8 +55,8 @@ private:
     void switch2output();
     void switch2input();
     inline void tim_config(tmr_type *tim, tmr_channel_select_type ch);
-    inline void restart_dma(uint16_t* buf);
-    inline void dma_config();
+    inline void restart_dma(uint16_t* buf, uint32_t sz);
+    inline void dma_config(dma_channel_type *dma);
     inline void dma_release();
 
     friend void TMR3_GLOBAL_IRQHandler(void);
@@ -74,16 +64,9 @@ private:
     friend void TMR15_GLOBAL_IRQHandler(void);
 
 public:
-    Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma);
-    ~Pwm();
-    virtual void set_mode(Mode mode = PWM_OUTPUT);
-    virtual void set_dutycycle(uint32_t dutycycle);
-    virtual void set_freq(uint32_t freq);
-    virtual uint32_t get_duty() const;  // return the pwm duty length
-    virtual uint32_t get_cycle() const; // return the pwm cycle length
-    virtual uint32_t get_pos() const;   // return the current pwm output position in the cycle
-    virtual void enable();
-    virtual void disable();
+    SignalPwm(Pin pin);
+    ~SignalPwm();
+    virtual void set_mode(Mode mode);
     virtual int send_pulses(const uint16_t *pulses, uint32_t sz, uint32_t period); // async
     virtual int recv_pulses(uint16_t *pulses, uint32_t sz);
     virtual void set_up_pulse_callback(Callback cb);

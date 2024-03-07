@@ -3,7 +3,7 @@
 #include "motor.h"
 
 static volatile int pulse = 0;
-static PwmIf *pwm = nullptr;
+static SignalPwmIf *pwm = nullptr;
 static uint32_t frame_err = 0;
 static int min_pulse;
 static int max_pulse;
@@ -212,8 +212,8 @@ void calibration(void)
 void Oneshot::bind(Pin pin)
 {
     pulse = 0;
-    pwm = PwmIf::new_instance(pin);
-    pwm->set_mode(PwmIf::UP_PULSE_CAPTURE); // measuring range: 4ms
+    pwm = SignalPwmIf::new_instance(pin);
+    pwm->set_mode(SignalPwmIf::UP_PULSE_CAPTURE); // measuring range: 4ms
     pwm->set_up_pulse_callback(
         [](uint32_t p)
         {

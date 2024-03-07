@@ -42,7 +42,7 @@ enum Pin
 
 // interfaces definition
 class MotorPwmIf
-{
+{ // for motor 3 pwm phase driver
 public:
     virtual ~MotorPwmIf() {}
     virtual void set_dutycycle(uint32_t dutycycle) = 0; // 0-2000 map to 0.0~1.0
@@ -59,37 +59,20 @@ public:
     static MotorPwmIf *new_instance(Pin a, Pin b, Pin c);
 };
 
-class PwmIf
-{
+class SignalPwmIf
+{ // for signal input detecting
 public:
     enum Mode
     {
         // requirements by all mode: output resolution > 2000, input measuring resolution >= 65535, range > 2.5ms
-        PWM_OUTPUT,           // legacy period pwm putput.
         UP_PULSE_CAPTURE,     // only capture up pulses, and dosen't support output.
         PULSE_OUTPUT_CAPTURE, // output pulses and capture pulses，out put polarity is low, capture both up pulse and down pulse.
     };
-    virtual ~PwmIf() {}
+    virtual ~SignalPwmIf() {}
     // set the PWM work mode, time insensitive, you can do many jobs in this function without worrying about time.
-    virtual void set_mode(Mode mode = PWM_OUTPUT) = 0;
+    virtual void set_mode(Mode mode = PULSE_OUTPUT_CAPTURE) = 0;
 
-    // interfaces below are time sensitive, make them run as fast as possible
-    /****************************** functions for PWM_OUTPUT mode only ******************************/ 
-    virtual void set_dutycycle(uint32_t dutycycle) = 0; // 0-2000 map to 0.0~1.0
-    /**
-     * @brief set frequency, valid range: 1Hz~10MHz
-     * when in pwm INPUT mode, this can set the measuring pulse range(max pulse 1/freq),
-     * the larger range, the lower accuracy, whatever, the accuracy should be less than 1/freq/4000
-     */
-    virtual void set_freq(uint32_t freq) = 0;
-    virtual void enable() = 0;
-    virtual void disable() = 0;
-    virtual uint32_t get_duty() const = 0;  // return the pwm duty length, unit insensitive(normally the timer tick count)
-    virtual uint32_t get_cycle() const = 0; // return the pwm cycle length, unit insensitive(normally the timer tick count)
-    virtual uint32_t get_pos() const = 0;   // return the current pwm output position in the cycle, unit insensitive(normally the timer tick count)
-    /****************************** functions for PWM_OUTPUT mode only ******************************/
-    
-    /****************************** functions for PULSE_OUTPUT_CAPTURE mode only ******************************/ 
+    /****************************** functions for PULSE_OUTPUT_CAPTURE mode only ******************************/
     /**
      * @brief write a array of pulses in ticks to the output, set pulses to null to check if last write is finished
      * if last write is finished, return 0, or return -1. send_pulses is asynchronous, works with set_freq function
@@ -112,17 +95,17 @@ public:
      * @note reffer to send_pulses function
      */
     virtual int recv_pulses(uint16_t *pulses = 0, uint32_t sz = 0) = 0;
-    /****************************** functions for PULSE_OUTPUT_CAPTURE mode only ******************************/ 
+    /****************************** functions for PULSE_OUTPUT_CAPTURE mode only ******************************/
 
-    /****************************** functions for UP_PULSE_CAPTURE mode only ******************************/ 
+    /****************************** functions for UP_PULSE_CAPTURE mode only ******************************/
     typedef void (*Callback)(uint32_t pulse_width);
     /**
      * @brief capture up pulse, and call back when it's done
      */
     virtual void set_up_pulse_callback(Callback cb) = 0;
-    /****************************** functions for UP_PULSE_CAPTURE mode only ******************************/ 
-    
-    static PwmIf *new_instance(Pin pin);
+    /****************************** functions for UP_PULSE_CAPTURE mode only ******************************/
+
+    static SignalPwmIf *new_instance(Pin pin);
 };
 
 class GpioIf
@@ -195,7 +178,7 @@ public:
 };
 
 class CrcIf // crc8
-{
+{   // not used yet
 public:
     virtual void set_start(uint8_t val) = 0;
     virtual void set_poly(uint8_t poly) = 0;

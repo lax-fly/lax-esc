@@ -58,7 +58,7 @@ enum State
 };
 
 static TimerIf *timer;
-static PwmIf *pwm;
+static SignalPwmIf *pwm;
 static uint64_t run_time;
 static uint16_t buffer[32];
 static int rd_sz;
@@ -115,8 +115,8 @@ Dshot::Dshot()
 
 void Dshot::bind(Pin pin)
 {
-    pwm = PwmIf::new_instance(pin);
-    pwm->set_mode(PwmIf::PULSE_OUTPUT_CAPTURE);
+    pwm = SignalPwmIf::new_instance(pin);
+    pwm->set_mode(SignalPwmIf::PULSE_OUTPUT_CAPTURE);
     freq_lock = 0;
     frame_err = 0;
     restart();

@@ -1,4 +1,4 @@
-#include "pwm.h"
+#include "signal-pwm.h"
 #include "gpio.h"
 #include "assert.h"
 
@@ -24,40 +24,21 @@ static PwmMap pwm_maps[] = {
     {TMR1, PA10, TMR_SELECT_CHANNEL_3, GPIO_MUX_2, DMA1_CHANNEL5},
 
     {TMR3, PB4, TMR_SELECT_CHANNEL_1, GPIO_MUX_0, DMA1_CHANNEL4},
-    {TMR3, PB5, TMR_SELECT_CHANNEL_2, GPIO_MUX_0, 0},
     {TMR3, PB0, TMR_SELECT_CHANNEL_3, GPIO_MUX_1, DMA1_CHANNEL2},
     {TMR3, PB1, TMR_SELECT_CHANNEL_4, GPIO_MUX_1, DMA1_CHANNEL3},
     {TMR3, PA6, TMR_SELECT_CHANNEL_1, GPIO_MUX_1, DMA1_CHANNEL4},
-    {TMR3, PA7, TMR_SELECT_CHANNEL_2, GPIO_MUX_1, 0},
 
     {TMR15, PA2, TMR_SELECT_CHANNEL_1, GPIO_MUX_0, DMA1_CHANNEL5},
     {TMR15, PA3, TMR_SELECT_CHANNEL_2, GPIO_MUX_0, DMA1_CHANNEL5},
 };
 
-PwmIf *PwmIf::new_instance(Pin pin)
+SignalPwmIf *SignalPwmIf::new_instance(Pin pin)
 {
-    uint8_t index = 0;
-    for (index = 0; index < ARRAY_CNT(pwm_maps); index++)
-    {
-        if (pin == pwm_maps[index].pin)
-            break;
-    }
-
-    assert(index < ARRAY_CNT(pwm_maps));
-
-    struct PwmMap &pwm_map = pwm_maps[index];
-
-    Gpio::setup_af(pin, Gpio::AF_OUTPUT_PP, pwm_map.af);
-
-    tmr_type *timer = pwm_map.periph;
-    tmr_channel_select_type channel = pwm_map.ch;
-    dma_channel_type *dma = pwm_map.dma;
-
-    Pwm *new_pwm = new Pwm(timer, channel, dma);
+    SignalPwm *new_pwm = new SignalPwm(pin);
     return new_pwm;
 }
 
-inline void Pwm::tim_config(tmr_type *tim, tmr_channel_select_type ch)
+inline void SignalPwm::tim_config(tmr_type *tim, tmr_channel_select_type ch)
 {
     uint32_t ch_idx = ch >> 1;
     // map the timer registers
@@ -65,7 +46,6 @@ inline void Pwm::tim_config(tmr_type *tim, tmr_channel_select_type ch)
     tim_cdt = &(&tim->c1dt)[ch_idx];
     tim_pr = &tim->pr;
     tim_div = &tim->div;
-    tim_cval = &tim->cval;
     tim_iden = &tim->iden;
 
     enable_dma_request = 1 << (9 + ch_idx);
@@ -147,7 +127,7 @@ inline void Pwm::tim_config(tmr_type *tim, tmr_channel_select_type ch)
     nvic_irq_enable(TMR3_GLOBAL_IRQn, 0, 0);
 }
 
-inline void Pwm::dma_release()
+inline void SignalPwm::dma_release()
 {
     if (dma_ctrl)
     {
@@ -160,7 +140,7 @@ inline void Pwm::dma_release()
     }
 }
 
-inline void Pwm::dma_config()
+inline void SignalPwm::dma_config(dma_channel_type *dma)
 {
     // dma config
     if (!dma || dma->paddr) // check if dma is occupied by checking the peripheral address
@@ -187,21 +167,34 @@ inline void Pwm::dma_config()
     *tim_iden |= enable_dma_request; // enable tmr's dma request
 }
 
-Pwm::Pwm(tmr_type *tim, tmr_channel_select_type ch, dma_channel_type *dma)
+SignalPwm::SignalPwm(Pin pin)
 {
-    freq = 0;
-    io_dir = OUTPUT; // OUTPUT default
+    uint8_t index = 0;
+    for (index = 0; index < ARRAY_CNT(pwm_maps); index++)
+    {
+        if (pin == pwm_maps[index].pin)
+            break;
+    }
+
+    assert(index < ARRAY_CNT(pwm_maps));
+
+    struct PwmMap &pwm_map = pwm_maps[index];
+
+    Gpio::setup_af(pin, Gpio::AF_OUTPUT_PP, pwm_map.af);
+
+    tmr_type *timer = pwm_map.periph;
+    tmr_channel_select_type channel = pwm_map.ch;
+    dma_channel_type *dma = pwm_map.dma;
+
     dma_ctrl = nullptr;
     callback = nullptr;
-    this->dma = dma;
 
-    tim_config(tim, ch);
-
-    set_freq(1000);
-    set_dutycycle(0);
+    tim_config(timer, channel);
+    dma_config(dma);
+    set_mode(PULSE_OUTPUT_CAPTURE);
 }
 
-Pwm::~Pwm()
+SignalPwm::~SignalPwm()
 {
     // release dma
     dma_release();
@@ -211,64 +204,7 @@ Pwm::~Pwm()
     *tim_div = 0;
 }
 
-// dutycycle 0.0000 ~ 1.0
-void Pwm::set_dutycycle(uint32_t dutycycle)
-{
-    if (__builtin_expect(this->dutycycle == dutycycle, false))
-        return;
-    this->dutycycle = dutycycle;
-    *tim_cdt = dutycycle * cycle / 2000;
-}
-
-void Pwm::set_freq(uint32_t freq)
-{
-    if (__builtin_expect(this->freq == freq, false)) // the current min and max freq are 1000 and 12MHz, value outside that is illegal
-        return;
-    this->freq = freq;
-    uint32_t div = 1;
-    cycle = SYS_CLOCK_FREQ / freq;
-    while (__builtin_expect(cycle > DEFAULT_PWM_PERIOD - 1, false))
-    {                // at most loop 3 times while freq = 1
-        div <<= 4;   // *16
-        cycle >>= 4; // /16
-    }
-    *tim_div = div - 1; // attention: the div value will only take effect in the next cycle, so there is some delay according to the cycle length
-    *tim_pr = cycle - 1;
-    *tim_cdt = dutycycle * cycle / 2000;
-}
-
-uint32_t Pwm::get_duty() const
-{
-    return *tim_cdt;
-}
-
-uint32_t Pwm::get_cycle() const
-{
-    return cycle;
-}
-
-uint32_t Pwm::get_pos() const
-{
-    return *tim_cval;
-}
-
-void Pwm::enable()
-{
-    uint32_t tmp = *tim_cm;
-    tmp &= coctrl_mask;
-    tmp |= pwm_enable;
-    *tim_cm = tmp;
-}
-
-void Pwm::disable()
-{ // when pwm is disabled, the output pin must bo forced low
-    uint32_t tmp = *tim_cm;
-    tmp &= coctrl_mask;
-    tmp |= pwm_disable;
-    *tim_cm = tmp;
-}
-
-void Pwm::switch2output() // about 1us
+void SignalPwm::switch2output() // about 1us
 {
     *tim_cctrl &= cctrl_mask;
     // *tim_cdt = 0; // will be loaded at the start of next period for we enabled channel output data buffer, so the next code line is necessary
@@ -288,7 +224,7 @@ void Pwm::switch2output() // about 1us
         *dma_ctrl = dma_m2p;
 }
 
-void Pwm::switch2input()
+void SignalPwm::switch2input()
 {
     *tim_cctrl &= cctrl_mask;
 
@@ -303,7 +239,7 @@ void Pwm::switch2input()
         *dma_ctrl = dma_p2m;
 }
 
-int Pwm::send_pulses(const uint16_t *pulses, uint32_t sz, uint32_t period)
+int SignalPwm::send_pulses(const uint16_t *pulses, uint32_t sz, uint32_t period)
 {
     assert(sz < BUF_SIZE);
     if (io_dir != OUTPUT)
@@ -326,7 +262,7 @@ int Pwm::send_pulses(const uint16_t *pulses, uint32_t sz, uint32_t period)
 
 #pragma GCC push_options
 #pragma GCC optimize("O0")
-inline void Pwm::restart_dma(uint16_t *buf)
+inline void SignalPwm::restart_dma(uint16_t *buf, uint32_t sz)
 {
     if (!dma_ctrl)
         return;
@@ -334,16 +270,16 @@ inline void Pwm::restart_dma(uint16_t *buf)
     register uint32_t disable_dma = tmp & ~1; // unset dma enable bit
     register uint32_t enable_dma = tmp | 1;   // set dma enable bit
     *dma_ctrl = disable_dma;
-    *dma_dtcnt = rd_sz;
+    *dma_dtcnt = sz;
     *dma_maddr = (uint32_t)buf;
     *dma_ctrl = enable_dma;
     *dma_ctrl = disable_dma; // first restart to clear the last cached DMA event, which is not expected, it may be at32's bug
-    *dma_dtcnt = rd_sz;
+    *dma_dtcnt = sz;
     *dma_ctrl = enable_dma;
 }
 #pragma GCC pop_options
 
-int Pwm::recv_pulses(uint16_t *pulses, uint32_t sz)
+int SignalPwm::recv_pulses(uint16_t *pulses, uint32_t sz)
 { // support max frame length 500us, which is far more enough for dshot150 to dshot 1200
     assert(sz < BUF_SIZE);
 
@@ -357,55 +293,43 @@ int Pwm::recv_pulses(uint16_t *pulses, uint32_t sz)
     {
         return (int)*dma_dtcnt;
     }
-    rd_idx = 0;
-    rd_sz = sz;
     *tim_pr = DEFAULT_PWM_PERIOD - 1; // maximize the measuring range
-    restart_dma(pulses);
+    restart_dma(pulses, sz);
     return sz;
 }
 
-Pwm *pwm_tim3 = nullptr;
-PwmIf::Callback tim3_callback = nullptr;
+SignalPwm *pwm_tim3 = nullptr;
+SignalPwmIf::Callback tim3_callback = nullptr;
 
-void Pwm::set_mode(Mode mode)
+void SignalPwm::set_mode(Mode mode)
 {
     pwm_tim3 = nullptr;
     tim3_callback = nullptr;
     switch (mode)
     {
-    case PWM_OUTPUT:
-        cctrl_out_value = cctrl_out_high_value;
-        dma_release();
-        *tim_iden &= it_disable;
-        io_dir = OUTPUT;
-        switch2output();
-        break;
     case UP_PULSE_CAPTURE:
-        set_freq(250);
-        dma_config();
+        *tim_div = 15; // attention: the div value will only take effect in the next cycle, so there is some delay according to the cycle length
         cctrl_in_value = cctrl_in_high_value;
-        io_dir = INPUT;
-        switch2input();
         pwm_tim3 = this;
         tim3_callback = callback;
-        *tim_pr = DEFAULT_PWM_PERIOD - 1;
         *tim_iden = it_enable;
         break;
     case PULSE_OUTPUT_CAPTURE:
-        set_freq(2000);
-        dma_config();
+        *tim_div = 0; // attention: the div value will only take effect in the next cycle, so there is some delay according to the cycle length
         cctrl_in_value = cctrl_in_both_value;
         cctrl_out_value = cctrl_out_low_value;
         *tim_iden &= it_disable;
-        io_dir = INPUT;
-        switch2input();
         break;
     default:
         break;
     }
+    *tim_pr = DEFAULT_PWM_PERIOD - 1;
+    io_dir = INPUT;
+        
+    switch2input();
 }
 
-void Pwm::set_up_pulse_callback(Callback cb)
+void SignalPwm::set_up_pulse_callback(Callback cb)
 {
     callback = cb;
     tim3_callback = callback;
