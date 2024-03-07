@@ -198,4 +198,12 @@ public:
     static CrcIf *singleton(); // do not try to delete the returned object
 };
 
+class FlashIf
+{   // for saving settings, 1kB is required at least
+public:
+    virtual void write(uint8_t *data, uint32_t sz) = 0;
+    virtual void read(uint8_t *data, uint32_t sz) = 0;
+    static FlashIf *singleton();
+};
+
 void system_init(void);

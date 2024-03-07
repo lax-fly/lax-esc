@@ -68,13 +68,8 @@ static uint32_t period45 = 0; // 4/5 * period, used for bi dir dshot
 static uint32_t half_period;
 static uint64_t now_us;
 
-static bool edt_mode = false;         // Extended DShot Telemetry (EDT)
-static bool serial_telemetry = false; // use serial telemetry?, on the bf configurator, you should enable esc sensor
 static dshotCommands_e last_cmd = DSHOT_CMD_MOTOR_STOP;
 static uint8_t cmd_repeat = 0;
-static uint8_t beacon_mode = 0;
-static bool mode_3d = false;
-static bool spin_dir_reverse = false;
 static int throttle = 0;
 
 static bool send_temparature = false;
@@ -163,11 +158,29 @@ void dshot_process(uint32_t dshot_bits)
         motor->arm(true);
         break;
     case DSHOT_CMD_BEACON1:
+        motor->beep(TONE1, MotorIf::VOLUME_LOW);
+        timer->delay_ms(200); // FC will wait for 260ms before next frame according to the edt protocol
+        motor->beep(TONE5, MotorIf::VOLUME_OFF);
+        break;
     case DSHOT_CMD_BEACON2:
+        motor->beep(TONE2, MotorIf::VOLUME_LOW);
+        timer->delay_ms(200); // FC will wait for 260ms before next frame according to the edt protocol
+        motor->beep(TONE5, MotorIf::VOLUME_OFF);
+        break;
     case DSHOT_CMD_BEACON3:
+        motor->beep(TONE3, MotorIf::VOLUME_LOW);
+        timer->delay_ms(200); // FC will wait for 260ms before next frame according to the edt protocol
+        motor->beep(TONE5, MotorIf::VOLUME_OFF);
+        break;
     case DSHOT_CMD_BEACON4:
+        motor->beep(TONE4, MotorIf::VOLUME_LOW);
+        timer->delay_ms(200); // FC will wait for 260ms before next frame according to the edt protocol
+        motor->beep(TONE5, MotorIf::VOLUME_OFF);
+        break;
     case DSHOT_CMD_BEACON5:
-        beacon_mode = value;
+        motor->beep(TONE5, MotorIf::VOLUME_LOW);
+        timer->delay_ms(200); // FC will wait for 260ms before next frame according to the edt protocol
+        motor->beep(TONE5, MotorIf::VOLUME_OFF);
         break;
     case DSHOT_CMD_ESC_INFO:
         send_value = 0;
@@ -176,23 +189,23 @@ void dshot_process(uint32_t dshot_bits)
     case DSHOT_CMD_SPIN_DIRECTION_NORMAL:
     case DSHOT_CMD_SPIN_DIRECTION_1:
         if (cmd_repeat >= 6)
-            spin_dir_reverse = false;
+            config.spin_dir_reverse = false;
 
         break;
     case DSHOT_CMD_SPIN_DIRECTION_REVERSED:
     case DSHOT_CMD_SPIN_DIRECTION_2:
         if (cmd_repeat >= 6)
-            spin_dir_reverse = true;
+            config.spin_dir_reverse = true;
 
         break;
     case DSHOT_CMD_3D_MODE_OFF:
         if (cmd_repeat >= 6)
-            mode_3d = false;
+            config.mode_3d = false;
 
         break;
     case DSHOT_CMD_3D_MODE_ON:
         if (cmd_repeat >= 6)
-            mode_3d = true;
+            config.mode_3d = true;
         break;
     case DSHOT_CMD_SETTINGS_REQUEST: // Currently not implemented by bf
         if (cmd_repeat >= 6)
@@ -201,20 +214,21 @@ void dshot_process(uint32_t dshot_bits)
     case DSHOT_CMD_SAVE_SETTINGS:
         if (cmd_repeat >= 6)
         {
+            config.save();
         }
         break;
     case DSHOT_CMD_EXTENDED_TELEMETRY_ENABLE:
-        if (cmd_repeat >= 6 && !edt_mode)
+        if (cmd_repeat >= 6 && !config.edt_mode)
         {
-            edt_mode = true;
+            config.edt_mode = true;
             send_value = 0;
             send_status = true;
         }
         break;
     case DSHOT_CMD_EXTENDED_TELEMETRY_DISABLE:
-        if (cmd_repeat >= 6 && edt_mode)
+        if (cmd_repeat >= 6 && config.edt_mode)
         {
-            edt_mode = false;
+            config.edt_mode = false;
             send_value = 0b000011111111;
             send_status = true;
         }
@@ -234,14 +248,14 @@ void dshot_process(uint32_t dshot_bits)
         if (value > 47)
         {
             throttle = value - 47;
-            if (mode_3d)
+            if (config.mode_3d)
             {
                 if (throttle > 1000)
                     throttle = (throttle - 1000) * 2;
                 else
                     throttle *= -2;
             }
-            if (spin_dir_reverse)
+            if (config.spin_dir_reverse)
                 throttle = -throttle;
             motor->set_throttle(throttle);
         }
@@ -387,7 +401,7 @@ void fill_send_buffer(void)
 
 void scheduling_telemetry(void)
 {
-    if (!edt_mode)
+    if (!config.edt_mode)
         return;
 
     uint32_t ms = timer->now_ms();
@@ -418,7 +432,7 @@ void send_prepare(void)
         return;
     }
 
-    if (!edt_mode)
+    if (!config.edt_mode)
         goto SEND_ERPM;
 
     if (send_current)

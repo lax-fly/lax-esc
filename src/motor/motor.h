@@ -1,6 +1,8 @@
 #pragma once
 #include <stdint.h>
 
+#include "config.h"
+
 #define TONE1 1600
 #define TONE2 1800
 #define TONE3 2000

@@ -1,5 +1,6 @@
 #pragma once
 #include "msp.h"
+#include "config.h"
 
 class Protocol
 {

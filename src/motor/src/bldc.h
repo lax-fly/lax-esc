@@ -4,7 +4,6 @@
 class Bldc : public MotorIf
 {
 private:
-
 public:
     Bldc();
     ~Bldc();

@@ -136,6 +136,8 @@ int main(void)
 {
     system_init();
     timer = TimerIf::singleton();
+    config.load();
+
 #if !defined(NDEBUG)
 #if DEBUG_PIN != PIN_NONE
     debug_pin = GpioIf::new_instance(DEBUG_PIN);

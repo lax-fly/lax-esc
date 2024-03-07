@@ -2,6 +2,8 @@
 #include "msp.h"
 #include "bldc.h"
 #include "board.h"
+#include "config.h"
+
 #include <assert.h>
 #include <stdio.h>
 #include <utility>
@@ -14,31 +16,6 @@ typedef struct
     ComparatorIf *cmp;
     AdcIf *adc;
 } CommutateMap;
-
-enum Angle
-{
-    ANGLE_1_875 = 5, // degree 1.875
-    ANGLE_3_75 = 4,  // degree 3.75
-    ANGLE_7_5 = 3,   // degree 7.5
-    ANGLE_15 = 2,    // degree 15
-    ANGLE_30 = 1,    // degree 30
-};
-
-/*********************** motor parameters *****************************/
-
-static uint32_t throttle = 0;                     // 0~2000 map to 0.0-1.0
-static uint32_t min_throttle = DUTY_CYCLE(0.05f); // for 3S. Grow it if motor won't startup with batery below 3S or bigger startup moment
-static uint32_t polar_cnt = 14;                   // the polar count of the target motor
-static uint32_t kv = 1400;                        // rpm/v while empty load, used to judge current load
-static uint32_t blind_interval = 20000;           // us
-static uint32_t startup_freq = 5000;              // Hz
-static Angle commutate_angle = ANGLE_30;
-static uint32_t bemf_threshold = 50;  // mV
-static uint32_t max_pwm_freq = 50000; // Hz
-static uint32_t current_gain = 5;     // the real current(mA) value divided by voltage(mV) from adc
-static uint32_t voltage_gain = 11;    // the read voltage value divided by voltage(mV) from adc
-
-/**********************************************************************/
 
 #define ARRAY_CNT(x) (sizeof(x) / sizeof(x[0]))
 
@@ -69,6 +46,8 @@ static TimerIf *timer;
 extern GpioIf *debug_pin;
 #endif
 
+static uint32_t throttle = 0;           // 0~2000 map to 0.0-1.0
+static uint32_t min_throttle;                  // for 3S. Grow it if motor won't startup with batery below 3S or bigger startup moment
 static uint32_t batery_voltage = 12000; // default 12v, will be updated when adc sampled the voltage
 static uint32_t heavy_load_erpm = 0;    // erpm
 static uint32_t turn_dir_erpm = 0;
@@ -193,12 +172,12 @@ Bldc::Bldc()
     adc_cur = AdcIf::new_instance(ADC_CUR_PIN);
     init_commutate_matrix();
     set_throttle(0);
-    batery_voltage = adc_bat->sample_voltage() * voltage_gain;
+    batery_voltage = adc_bat->sample_voltage() * config.voltage_gain;
     batery_voltage = 8000; // batery_voltage < VOLTAGE_1S ? VOLTAGE_1S : batery_voltage;
-    heavy_load_erpm = batery_voltage * kv / 1000 * polar_cnt / 2 / 4;
-    turn_dir_erpm = 450 * polar_cnt / 2;
+    heavy_load_erpm = batery_voltage * config.kv / 1000 * config.polar_cnt / 2 / 4;
+    turn_dir_erpm = 450 * config.polar_cnt / 2;
 
-    min_throttle = 0.8f * 1000 * kv / batery_voltage; // 0.0004 = 0.05 * 11v / 1400kv
+    min_throttle = 0.8f * 1000 * config.kv / batery_voltage; // 0.0004 = 0.05 * 11v / 1400kv
     if (min_throttle < DUTY_CYCLE(0.05f))
         min_throttle = DUTY_CYCLE(0.05f);
 
@@ -236,9 +215,9 @@ void routine_1kHz(void *data) // this determines pwm update frequency
             braking = false;
     }
 
-    pwm_freq = startup_freq + erpm; // e.g. 1400kV motor using 3S -> max erpm = 117600
-    if (pwm_freq > max_pwm_freq)    // limit the max pwm freqence
-        pwm_freq = max_pwm_freq;
+    pwm_freq = config.startup_freq + erpm; // e.g. 1400kV motor using 3S -> max erpm = 117600
+    if (pwm_freq > config.max_pwm_freq)    // limit the max pwm freqence
+        pwm_freq = config.max_pwm_freq;
 
     is_pwm_changed = 1;
 }
@@ -252,8 +231,8 @@ void update_state(void)
     uint32_t intval = now - last_us;
     last_us = now;
 
-    if (intval > blind_interval)
-        intval = blind_interval;
+    if (intval > config.blind_interval)
+        intval = config.blind_interval;
 
     sum = sum - buf[i] + intval;
 
@@ -263,10 +242,10 @@ void update_state(void)
     if (i >= ARRAY_CNT(buf))
         i = 0;
 
-    commutate_time = now + (zero_interval >> commutate_angle);
+    commutate_time = now + (zero_interval >> config.commutate_angle);
     next_zero = now + zero_interval;
 
-    if (intval == blind_interval)
+    if (intval == config.blind_interval)
         erpm = 0;
     else
         erpm = 60 * 1000000 / 6 / zero_interval;
@@ -314,7 +293,7 @@ int zero_cross_check(int current_step)
         else if (pos > duty + error)
         {                                                  // detect demagnatic time automatically
             uint32_t tmp = com_mtx->adc->sample_voltage(); // costs about 1us
-            if (tmp > bemf_threshold)                      // check if the bemf is large enough
+            if (tmp > config.bemf_threshold)                      // check if the bemf is large enough
                 demag = pos;
         }
         else if (pos + error > duty)
@@ -384,9 +363,9 @@ int get_nxt_step(int current_step, int edge)
 int Bldc::get_rpm() const
 {
     if (spin_direction > 0)
-        return erpm * 2 / polar_cnt;
+        return erpm * 2 / config.polar_cnt;
     else
-        return -(erpm * 2 / polar_cnt);
+        return -(erpm * 2 / config.polar_cnt);
 }
 
 int Bldc::get_erpm() const
@@ -406,7 +385,7 @@ int Bldc::get_e_period() const
 
 int Bldc::get_current() const
 {
-    return adc_cur->sample_voltage() * current_gain;
+    return adc_cur->sample_voltage() * config.current_gain;
 }
 
 void Bldc::set_throttle(int v)
@@ -448,7 +427,7 @@ void Bldc::set_throttle(int v)
 void Bldc::stop()
 {
     pwm_dutycycle = 0;
-    pwm_freq = startup_freq;
+    pwm_freq = config.startup_freq;
     pwms->select(PIN_NONE);
     io->select(PIN_MAX);
     braking = true;

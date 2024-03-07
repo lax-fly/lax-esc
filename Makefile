@@ -53,14 +53,15 @@ MTR_LAYER_DIR = src/motor
 PRO_LAYER_DIR = src/protocol
 MSP_LAYER_DIR = src/msp
 START_UP_DIR = src/startup/$(MCU_FAMILY)
+CONFIG_DIR = src/config
 BOARD_DEF_DIR = src/board
 
-APP_LAYER_INCLUDE  = $(BOARD_DEF_DIR) $(APP_LAYER_DIR) $(MTR_LAYER_DIR) $(MSP_LAYER_DIR) $(PRO_LAYER_DIR)
-PRO_LAYER_INCLUDE  = $(BOARD_DEF_DIR) $(PRO_LAYER_DIR) $(PRO_LAYER_DIR)/src $(MSP_LAYER_DIR) $(MTR_LAYER_DIR)
-MTR_LAYER_INCLUDE  = $(BOARD_DEF_DIR) $(MTR_LAYER_DIR) $(MTR_LAYER_DIR)/src $(MSP_LAYER_DIR)
+APP_LAYER_INCLUDE  = $(BOARD_DEF_DIR) $(APP_LAYER_DIR) $(MTR_LAYER_DIR) $(MSP_LAYER_DIR) $(PRO_LAYER_DIR) $(CONFIG_DIR)
+PRO_LAYER_INCLUDE  = $(BOARD_DEF_DIR) $(PRO_LAYER_DIR) $(PRO_LAYER_DIR)/src $(MSP_LAYER_DIR) $(MTR_LAYER_DIR) $(CONFIG_DIR)
+MTR_LAYER_INCLUDE  = $(BOARD_DEF_DIR) $(MTR_LAYER_DIR) $(MTR_LAYER_DIR)/src $(MSP_LAYER_DIR) $(CONFIG_DIR)
 MSP_LAYER_INCLUDE  = $(MSP_LAYER_DIR) $(MSP_LAYER_DIR)/src/$(MCU_FAMILY) $(MSP_LAYER_DIR)/src/$(MCU_FAMILY)/stdlib src/msp/src/cm4
 
-SOURCES_DIR = $(START_UP_DIR) $(APP_LAYER_DIR) $(MTR_LAYER_DIR)/src $(PRO_LAYER_DIR)/src $(MSP_LAYER_DIR)/src $(MSP_LAYER_DIR)/src/$(MCU_FAMILY) $(MSP_LAYER_DIR)/src/$(MCU_FAMILY)/stdlib
+SOURCES_DIR = $(START_UP_DIR) $(CONFIG_DIR) $(APP_LAYER_DIR) $(MTR_LAYER_DIR)/src $(PRO_LAYER_DIR)/src $(MSP_LAYER_DIR)/src $(MSP_LAYER_DIR)/src/$(MCU_FAMILY) $(MSP_LAYER_DIR)/src/$(MCU_FAMILY)/stdlib
 
 SOURCES = $(wildcard $(foreach i,$(SOURCES_DIR),$(i)/*.c $(i)/*.cpp $(i)/*.s))
 
@@ -153,6 +154,7 @@ define get_include_dir
 		*motor/*) INCLUDE_DIR="$(foreach i,$(MTR_LAYER_INCLUDE),-I$(i))";; \
 		*msp/*) INCLUDE_DIR="$(foreach i,$(MSP_LAYER_INCLUDE),-I$(i))";; \
 		*protocol/*) INCLUDE_DIR="$(foreach i,$(PRO_LAYER_INCLUDE),-I$(i))";; \
+		*config/*) INCLUDE_DIR="$(foreach i,$(MSP_LAYER_INCLUDE),-I$(i))";; \
 		*) echo "#######  error object: $(1) ########" ;; \
 	esac; echo -n $${INCLUDE_DIR} > $(BUILD_DIR)/$(dir $(1))/$(notdir $(1)).inc
 endef
