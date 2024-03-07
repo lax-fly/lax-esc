@@ -44,9 +44,14 @@ void Serial::proccess(void)
             if (STR_CMP((char *)rx_buf, "throttle ") == 0)
             {
                 p += 9;
+                int value = strtol(p, nullptr, 10);
+                motor->set_throttle(value);
             }
-            int value = strtod(p, nullptr);
-            motor->set_throttle(0);
+            if (STR_CMP((char *)rx_buf, "arm") == 0)
+            {
+                p += 9;
+                motor->arm(true);
+            }
             restart();
         }
         else if (process_idx == sizeof(rx_buf) / sizeof(rx_buf[0]))

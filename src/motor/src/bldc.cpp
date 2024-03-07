@@ -60,7 +60,7 @@ static AdcIf *adc_c;
 static AdcIf *adc_bat;
 static AdcIf *adc_cur;
 
-static MotorPwmIf* pwms;
+static MotorPwmIf *pwms;
 
 static GpioIf *la;
 static GpioIf *lb;
@@ -80,7 +80,7 @@ static uint32_t pwm_freq = 0;
 static uint32_t pwm_dutycycle = 0;
 static uint32_t demag = UINT32_MAX;
 static uint32_t speed_change_limit = 0;
-static int spin_direction = 0; // 1: forward -1: backward
+static int spin_direction = 1; // 1: forward -1: backward
 static bool armed = false;
 
 static uint64_t next_zero = 0;
@@ -168,7 +168,30 @@ void set_frequency(uint32_t pwm_freq)
  * |    5-BA      |     0-BC      |    1-AC      |   adc_c        |     cmp_c      |     hb       |
  *
  */
-static CommutateMap commutate_matrix[6] = {0};
+
+static CommutateMap forward_commutate_matrix[6] = {0};
+
+static CommutateMap backward_commutate_matrix[6] = {0};
+
+void init_commutate_matrix()
+{
+    forward_commutate_matrix[0] = {BC, 2, 1, cmp_a, adc_a};
+    forward_commutate_matrix[1] = {AC, 2, 3, cmp_b, adc_b};
+    forward_commutate_matrix[2] = {AB, 4, 3, cmp_c, adc_c};
+    forward_commutate_matrix[3] = {CB, 4, 5, cmp_a, adc_a};
+    forward_commutate_matrix[4] = {CA, 0, 5, cmp_b, adc_b};
+    forward_commutate_matrix[5] = {BA, 0, 1, cmp_c, adc_c};
+
+    // swap any two phase to change the spin direction
+    backward_commutate_matrix[0] = {CB, 2, 1, cmp_a, adc_a};
+    backward_commutate_matrix[1] = {AB, 2, 3, cmp_c, adc_c};
+    backward_commutate_matrix[2] = {AC, 4, 3, cmp_b, adc_b};
+    backward_commutate_matrix[3] = {BC, 4, 5, cmp_a, adc_a};
+    backward_commutate_matrix[4] = {BA, 0, 5, cmp_c, adc_c};
+    backward_commutate_matrix[5] = {CA, 0, 1, cmp_b, adc_b};
+}
+
+static CommutateMap *commutate_matrix = forward_commutate_matrix;
 
 Bldc::Bldc()
 {
@@ -188,6 +211,7 @@ Bldc::Bldc()
     adc_c = AdcIf::new_instance(ADC_C_PIN);
     adc_bat = AdcIf::new_instance(ADC_BAT_PIN);
     adc_cur = AdcIf::new_instance(ADC_CUR_PIN);
+    init_commutate_matrix();
     set_throttle(0);
     batery_voltage = adc_bat->sample_voltage() * voltage_gain;
     batery_voltage = 8000; // batery_voltage < VOLTAGE_1S ? VOLTAGE_1S : batery_voltage;
@@ -253,7 +277,7 @@ void update_state(void)
 
     sum = sum - buf[i] + intval;
 
-        zero_interval = sum / ARRAY_CNT(buf);
+    zero_interval = sum / ARRAY_CNT(buf);
 
     buf[i++] = intval;
     if (i >= ARRAY_CNT(buf))
@@ -279,7 +303,8 @@ int Commutate(int step)
         if (now < commutate_time)
             return -1;
     }
-    com_mtx->commutate();
+    if (!braking)
+        com_mtx->commutate();
     com_mtx->cmp->prepare();
     com_mtx->adc->prepare(); // first call to enable channel
     return 0;
@@ -378,7 +403,7 @@ int get_nxt_step(int current_step, int edge)
 
 int Bldc::get_rpm() const
 {
-    if (spin_direction >= 0)
+    if (spin_direction > 0)
         return erpm * 2 / polar_cnt;
     else
         return -(erpm * 2 / polar_cnt);
@@ -386,7 +411,7 @@ int Bldc::get_rpm() const
 
 int Bldc::get_erpm() const
 {
-    if (spin_direction >= 0)
+    if (spin_direction > 0)
         return erpm;
     else
         return -erpm;
@@ -407,9 +432,13 @@ int Bldc::get_current() const
 void Bldc::set_throttle(int v)
 {
     bool dir_changed = false;
-    if (v >= 0)
+    if (v == 0)
     {
-        if (spin_direction <= 0)
+        throttle = v;
+    }
+    else if (v > 0)
+    {
+        if (spin_direction < 0)
             dir_changed = true;
         spin_direction = 1;
         throttle = v;
@@ -426,24 +455,13 @@ void Bldc::set_throttle(int v)
         return;
 
     stop();
-    // swap any two phase to change the spin direction
     if (spin_direction > 0)
     {
-        commutate_matrix[0] = {BC, 2, 1, cmp_a, adc_a};
-        commutate_matrix[1] = {AC, 2, 3, cmp_b, adc_b};
-        commutate_matrix[2] = {AB, 4, 3, cmp_c, adc_c};
-        commutate_matrix[3] = {CB, 4, 5, cmp_a, adc_a};
-        commutate_matrix[4] = {CA, 0, 5, cmp_b, adc_b};
-        commutate_matrix[5] = {BA, 0, 1, cmp_c, adc_c};
+        commutate_matrix = forward_commutate_matrix;
     }
     else if (spin_direction < 0)
     {
-        commutate_matrix[0] = {CB, 2, 1, cmp_a, adc_a};
-        commutate_matrix[1] = {AB, 2, 3, cmp_c, adc_c};
-        commutate_matrix[2] = {AC, 4, 3, cmp_b, adc_b};
-        commutate_matrix[3] = {BC, 4, 5, cmp_a, adc_a};
-        commutate_matrix[4] = {BA, 0, 5, cmp_c, adc_c};
-        commutate_matrix[5] = {CA, 0, 1, cmp_b, adc_b};
+        commutate_matrix = backward_commutate_matrix;
     }
 }
 
@@ -474,7 +492,7 @@ void Bldc::poll()
         set_frequency(pwm_freq);
         is_pwm_changed = 0;
     }
-    if (!braking && edge)
+    if (edge)
     {
         if (Commutate(step) == 0)
         {

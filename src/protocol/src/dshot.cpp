@@ -234,6 +234,15 @@ void dshot_process(uint32_t dshot_bits)
         if (value > 47)
         {
             throttle = value - 47;
+            if (mode_3d)
+            {
+                if (throttle > 1000)
+                    throttle = (throttle - 1000) * 2;
+                else
+                    throttle *= -2;
+            }
+            if (spin_dir_reverse)
+                throttle = -throttle;
             motor->set_throttle(throttle);
         }
         break;
@@ -256,7 +265,7 @@ void proccess(void)
         else
             period = (uint32_t)(buffer[30] - buffer[0]) / 15;
         half_period = period / 2;
-        for (uint32_t i = 0; i < 32; i+=2)
+        for (uint32_t i = 0; i < 32; i += 2)
         {
             dshot_bits <<= 1;
             register uint32_t low = buffer[i];
@@ -278,7 +287,7 @@ void proccess(void)
     }
     else
     {
-        for (uint32_t i = 0; i < 32; i+=2)
+        for (uint32_t i = 0; i < 32; i += 2)
         {
             dshot_bits <<= 1;
             register uint32_t low = buffer[i];
@@ -357,7 +366,6 @@ uint32_t encode2dshot_bits(uint32_t data)
     }
     return dshot_bits;
 }
-
 
 void fill_send_buffer(void)
 {
