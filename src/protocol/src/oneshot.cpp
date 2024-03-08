@@ -34,7 +34,7 @@ void Oneshot::poll(void)
         run_time = now + 5;
         frame_err++;
 
-        if (data_updated && throttle < DEAD_AREA)
+        if (data_updated && throttle < DEAD_AREA && throttle > -DEAD_AREA)
             motor->arm(true);
     }
 }
@@ -240,10 +240,21 @@ void Oneshot::bind(Pin pin)
                 frame_err = 0;
             }
             throttle = (pulse - min_pulse) * 2000 / (max_pulse - min_pulse);
-            if (throttle < DEAD_AREA) // dead area
+
+            if (config.mode_3d)
+            {
+                throttle = (throttle - 1000) * 2;
+            }
+
+            if (throttle < DEAD_AREA && throttle > -DEAD_AREA) // dead area
                 throttle = 0;
             if (throttle > 2000)
                 throttle = 2000;
+            if (throttle < -2000)
+                throttle = -2000;
+
+            if (config.spin_dir_reverse)
+                throttle = -throttle;
             motor->set_throttle(throttle);
         });
     calibration();
