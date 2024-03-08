@@ -174,7 +174,9 @@ void calibration(void)
 
     if (pulse < 30000)
     { // multishot
-        calibrate_shot(5000, 25000);
+        calibrate_shot(config.multishot_min, config.multishot_max);
+        config.multishot_max = max_pulse;
+        config.multishot_min = min_pulse;
         return;
     }
     if (pulse < 37000)
@@ -184,7 +186,9 @@ void calibration(void)
     }
     if (pulse < 89000)
     { // onshot42
-        calibrate_shot(42000, 84000);
+        calibrate_shot(config.oneshot42_min, config.oneshot42_max);
+        config.oneshot42_max = max_pulse;
+        config.oneshot42_min = min_pulse;
         return;
     }
     if (pulse < 115000)
@@ -194,7 +198,9 @@ void calibration(void)
     }
     if (pulse < 260000)
     { // oneshot125
-        calibrate_shot(125000, 250000);
+        calibrate_shot(config.oneshot125_min, config.oneshot125_max);
+        config.oneshot125_max = max_pulse;
+        config.oneshot125_min = min_pulse;
         return;
     }
     if (pulse < 950000)
@@ -204,7 +210,9 @@ void calibration(void)
     }
     if (pulse < 2050000)
     { // std pwm
-        calibrate_shot(1000000, 2000000);
+        calibrate_shot(config.pwm_min, config.pwm_max);
+        config.pwm_max = max_pulse;
+        config.pwm_min = min_pulse;
         return;
     }
 }
@@ -239,6 +247,7 @@ void Oneshot::bind(Pin pin)
             motor->set_throttle(throttle);
         });
     calibration();
+    config.save();
     printf("max pulse: %d min pulse: %d\n", max_pulse, min_pulse);
     timer->delay_ms(10);
 }

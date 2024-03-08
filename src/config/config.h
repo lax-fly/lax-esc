@@ -30,6 +30,16 @@ struct Config
     uint32_t current_gain;   // the real current(mA) value divided by voltage(mV) from adc
     uint32_t voltage_gain;   // the read voltage value divided by voltage(mV) from adc
 
+    // calibration value for shot type protocol
+    uint32_t multishot_min;
+    uint32_t multishot_max;
+    uint32_t oneshot42_min;
+    uint32_t oneshot42_max;
+    uint32_t oneshot125_min;
+    uint32_t oneshot125_max;
+    uint32_t pwm_min;
+    uint32_t pwm_max;
+
     void save();
     void load();
 } __attribute__((aligned(4)));

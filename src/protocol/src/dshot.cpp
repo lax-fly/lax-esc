@@ -143,7 +143,7 @@ void build_esc_info_telemetry(void)
         uint8_t res_ver;      // Indicates which response version is used. 254 is for BLHeli_32 version.
         uint8_t fw_ver;       // FW revision (32 = 32)
         uint8_t fw_sub_ver;   // FW sub revision (10 = xx.1, 11 = xx.11)
-        uint8_t unused;       // Unused
+        uint8_t unused1;       // Unused
         uint8_t rotation_dir; // Rotation direction reversed by DShot command or not (1:0)
         uint8_t mode_3d;      // 3D mode active or not (1:0)
         uint8_t low_vol_prot; // Low voltage protection limit [0.1V] (255 = not capable, 0 = disabled)
@@ -151,7 +151,7 @@ void build_esc_info_telemetry(void)
         uint8_t led1;         // LED1 on or not (1:0, 255 = LED0 not present)
         uint8_t led2;         // LED2 on or not (1:0, 255 = LED0 not present)
         uint8_t led3;         // LED3 on or not (1:0, 255 = LED0 not present)
-        uint8_t unused[7];    // Unused
+        uint8_t unused2[7];    // Unused
         uint8_t esc_sign[32]; // ESC signature
         uint8_t crc;          // CRC (same CRC as is used for telemetry)
     } esc_info;

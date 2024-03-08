@@ -136,7 +136,6 @@ int main(void)
 {
     system_init();
     timer = TimerIf::singleton();
-    config.load();
 
 #if !defined(NDEBUG)
 #if DEBUG_PIN != PIN_NONE
@@ -146,6 +145,8 @@ int main(void)
     debug_usart = UsartIf::new_instance(PB6, PB7, 256000, 1);
     debug_proto = Protocol::singleton(Protocol::SERIAL, PIN_NONE);
 #endif
+
+    config.load();
     motor = MotorIf::singleton(MotorIf::BLDC);
     sound = new Sound(motor);
     sound->power_on_tone();
