@@ -74,6 +74,8 @@ void calibrate_shot(uint32_t low, uint32_t high)
     uint32_t tmp_min;
     uint32_t tmp_max;
     int mid_v = (int)(high + low) / 2;
+    if (config.mode_3d)
+        mid_v = (int)(high + low) * 3 / 4;
 
     if (pulse < mid_v)
         return;

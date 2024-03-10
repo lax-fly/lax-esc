@@ -174,7 +174,7 @@ Bldc::Bldc()
     init_commutate_matrix();
     set_throttle(0);
     batery_voltage = adc_bat->sample_voltage() * config.voltage_gain;
-    batery_voltage = 12000; // batery_voltage < VOLTAGE_1S ? VOLTAGE_1S : batery_voltage;
+    batery_voltage = batery_voltage < VOLTAGE_1S ? VOLTAGE_1S : batery_voltage;
     heavy_load_erpm = batery_voltage * config.kv / 1000 * config.polar_cnt / 2 / 4;
     turn_dir_erpm = 450 * config.polar_cnt / 2;
 
