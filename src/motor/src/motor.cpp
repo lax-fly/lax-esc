@@ -19,4 +19,5 @@ MotorIf *MotorIf::singleton(Type type)
         assert(false);
         break;
     }
+    return nullptr;
 }

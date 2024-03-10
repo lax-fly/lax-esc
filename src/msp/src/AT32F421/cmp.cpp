@@ -32,8 +32,8 @@ ComparatorIf *ComparatorIf::new_instance(Pin pos_pin, Pin neg_pin, Pin out_pin)
 
 Comparator::Comparator(Pin pos_pin, Pin neg_pin, Pin out_pin)
 {
-    cmp_non_inverting_type non_invert_in;
-    cmp_inverting_type invert_in;
+    cmp_non_inverting_type non_invert_in = CMP_NON_INVERTING_PA5;
+    cmp_inverting_type invert_in = CMP_INVERTING_PA4;
     switch (pos_pin)
     {
     case PA5:

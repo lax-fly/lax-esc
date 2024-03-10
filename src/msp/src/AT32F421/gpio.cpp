@@ -46,7 +46,7 @@ void Gpio::setup_af(Pin pin, AfMode mode, gpio_mux_sel_type function)
     gpio_type *regs = (gpio_type *)(GPIOA_BASE + 0x400 * GPIO2PORT(pin));
     gpio_mode_type gpio_mode = GPIO_MODE_MUX;
     gpio_output_type gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
-    gpio_pull_type gpio_pull = GPIO_PULL_NONE;
+    gpio_pull_type gpio_pull = GPIO_PULL_UP;
     gpio_drive_type gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
     Gpio::clock_enable(regs);
     switch (mode)

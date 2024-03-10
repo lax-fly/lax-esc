@@ -6,7 +6,9 @@
 #include <assert.h>
 #include "string.h"
 
+#ifndef NDEBUG
 static Serial *serial = nullptr;
+#endif
 static Dshot *dshot = nullptr;
 static Oneshot *oneshot = nullptr;
 
@@ -23,18 +25,21 @@ static uint32_t pulses[16] = {0};
 #define ARRAY_SZ(x) (sizeof(x) / sizeof(x[0]))
 Protocol::Type Protocol::auto_detect(Pin pin)
 {
-    static Protocol::Type type = BRUSHED;
     TimerIf *timer = TimerIf::singleton();
     reset_protocol();
     SignalPwmIf *pwm = SignalPwmIf::new_instance(pin);
     pwm->set_mode(SignalPwmIf::UP_PULSE_CAPTURE); // measuring range: 4ms
-    timer->delay_ms(5);                     // necessary delay
+    timer->delay_ms(5);                           // necessary delay
     pwm->set_up_pulse_callback(
         [](uint32_t p)
         {
             if (pulse_cnt < ARRAY_SZ(pulses))
                 pulses[pulse_cnt++] = p;
         });
+    Protocol::Type type = BRUSHED;
+    Protocol::Type last_type = BRUSHED;
+    uint32_t type_cnt = 1;
+REPEAT:
     while (1)
     {
         pulse_cnt = 0;
@@ -86,6 +91,14 @@ Protocol::Type Protocol::auto_detect(Pin pin)
             break;
         }
     }
+
+    if (type == last_type)
+        type_cnt++;
+    else
+        type_cnt = 1;
+    last_type = type;
+    if (type_cnt < 3) // if the detected protocol is the same 3 times continuously, then the protocol is comformed
+        goto REPEAT;
 
     delete pwm;
     return type;

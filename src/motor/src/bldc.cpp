@@ -47,12 +47,13 @@ extern GpioIf *debug_pin;
 #endif
 
 static uint32_t throttle = 0;           // 0~2000 map to 0.0-1.0
-static uint32_t min_throttle;                  // for 3S. Grow it if motor won't startup with batery below 3S or bigger startup moment
+static uint32_t min_throttle;           // for 3S. Grow it if motor won't startup with batery below 3S or bigger startup moment
 static uint32_t batery_voltage = 12000; // default 12v, will be updated when adc sampled the voltage
 static uint32_t heavy_load_erpm = 0;    // erpm
 static uint32_t turn_dir_erpm = 0;
 static uint32_t erpm = 0;
 static uint32_t pwm_freq = 0;
+static uint32_t pwm_period = 0;
 static uint32_t pwm_dutycycle = 0;
 static uint32_t demag = UINT32_MAX;
 static uint32_t speed_change_limit = 0;
@@ -173,7 +174,7 @@ Bldc::Bldc()
     init_commutate_matrix();
     set_throttle(0);
     batery_voltage = adc_bat->sample_voltage() * config.voltage_gain;
-    batery_voltage = 8000; // batery_voltage < VOLTAGE_1S ? VOLTAGE_1S : batery_voltage;
+    batery_voltage = 12000; // batery_voltage < VOLTAGE_1S ? VOLTAGE_1S : batery_voltage;
     heavy_load_erpm = batery_voltage * config.kv / 1000 * config.polar_cnt / 2 / 4;
     turn_dir_erpm = 450 * config.polar_cnt / 2;
 
@@ -196,7 +197,7 @@ void routine_1kHz(void *data) // this determines pwm update frequency
       careful to grow this, the faster, the easier to stall.
       I've tried 40, which is ok, but I use 20 for stability.
       */
-        pwm_dutycycle += 20;
+        pwm_dutycycle += 50;
     }
     else
         pwm_dutycycle = throttle; // speeding down immediately is permitted
@@ -218,6 +219,8 @@ void routine_1kHz(void *data) // this determines pwm update frequency
     pwm_freq = config.startup_freq + erpm; // e.g. 1400kV motor using 3S -> max erpm = 117600
     if (pwm_freq > config.max_pwm_freq)    // limit the max pwm freqence
         pwm_freq = config.max_pwm_freq;
+
+    pwm_period = 1000000 / pwm_freq;
 
     is_pwm_changed = 1;
 }
@@ -242,7 +245,10 @@ void update_state(void)
     if (i >= ARRAY_CNT(buf))
         i = 0;
 
-    commutate_time = now + (zero_interval >> config.commutate_angle);
+    if (demag == UINT32_MAX) // commutate using degree delay when bemf is valid
+        commutate_time = now + (zero_interval >> ANGLE_1_875);
+    else
+        commutate_time = now + (zero_interval >> config.commutate_angle);
     next_zero = now + zero_interval;
 
     if (intval == config.blind_interval)
@@ -252,18 +258,15 @@ void update_state(void)
 
     speed_change_limit = zero_interval / 2 + zero_interval / 4;
 }
-
+uint64_t com_time = 0;
 int Commutate(int step)
 {
+    if (now < commutate_time)
+        return -1;
     CommutateMap *com_mtx = &commutate_matrix[step];
-
-    if (demag != UINT32_MAX) // commutate using degree delay when bemf is valid
-    {
-        if (now < commutate_time)
-            return -1;
-    }
     if (!braking)
         com_mtx->commutate();
+    com_time = now;
     com_mtx->cmp->prepare();
     com_mtx->adc->prepare(); // first call to enable channel
     return 0;
@@ -273,12 +276,10 @@ int zero_cross_check(int current_step)
 {
     CommutateMap *com_mtx = &commutate_matrix[current_step];
 
-    uint32_t T = 1000000 / pwm_freq;
-
     uint32_t duty = pwms->get_duty();
     uint32_t cycle = pwms->get_cycle();
     uint32_t pos = pwms->get_pos();
-    uint32_t error = 2 * cycle / T; // make 1us error, based on the cmp's ouput delay along with the startup dutycycle and frequency
+    uint32_t error = 1 * cycle / pwm_period; // make 1us error, based on the cmp's ouput delay along with the startup dutycycle and frequency
     bool stall = 0;
     do // software cmp blanking
     {
@@ -291,9 +292,11 @@ int zero_cross_check(int current_step)
             break;
         }
         else if (pos > duty + error)
-        {                                                  // detect demagnatic time automatically
+        { // detect demagnatic time automatically
+            if (now < com_time + zero_interval / 32) // when start up, there is some interference after commutating, which may cause the demag measuring not accurate
+                return 0;
             uint32_t tmp = com_mtx->adc->sample_voltage(); // costs about 1us
-            if (tmp > config.bemf_threshold)                      // check if the bemf is large enough
+            if (tmp > config.bemf_threshold)               // check if the bemf is large enough
                 demag = pos;
         }
         else if (pos + error > duty)
@@ -329,7 +332,7 @@ int zero_cross_check(int current_step)
             last_res = cmp_res;
     }
 
-    if (now < next_zero - speed_change_limit) // limitation for speedup
+    if (now + speed_change_limit < next_zero) // limitation for speedup
     {
         cmp_res = last_res;
     }

@@ -10,6 +10,8 @@ static int max_pulse;
 static TimerIf *timer;
 static uint32_t run_time = 0;
 static bool data_updated = false;
+static int valid_low = 0;
+static int valid_high = 0;
 
 extern int throttle;
 extern MotorIf *motor;
@@ -31,8 +33,8 @@ void Oneshot::poll(void)
     uint32_t now = timer->now_ms();
     if (now > run_time)
     {
-        run_time = now + 5;
-        frame_err++;
+        run_time = now + 10;
+        frame_err += 10;
 
         if (data_updated && throttle < DEAD_AREA && throttle > -DEAD_AREA)
             motor->arm(true);
@@ -41,9 +43,13 @@ void Oneshot::poll(void)
 
 bool Oneshot::signal_lost()
 {
-    bool res = frame_err > 100;
+    bool res = frame_err > 50;
     if (res)
+    {
         motor->arm(false);
+        pwm->set_up_pulse_callback(nullptr);
+        valid_low = valid_high = 0;
+    }
     return res;
 }
 
@@ -63,6 +69,10 @@ void calibrate_shot(uint32_t low, uint32_t high)
 {
     max_pulse = high;
     min_pulse = low;
+    valid_high = high * 1.05f;
+    valid_low = low * 0.95f;
+    uint32_t tmp_min;
+    uint32_t tmp_max;
     int mid_v = (int)(high + low) / 2;
 
     if (pulse < mid_v)
@@ -80,9 +90,9 @@ void calibrate_shot(uint32_t low, uint32_t high)
         if (run_time != now)
         { // 1ms per loop
             run_time = now;
-            max_pulse = calc_average(pulse);
+            tmp_max = calc_average(pulse);
             if (now - last_time < 200)
-                motor->beep(TONE5, MotorIf::VOLUME_LOW); // beep on
+                motor->beep(TONE5, MotorIf::VOLUME_HIGH); // beep on
             else
                 motor->beep(TONE5, MotorIf::VOLUME_OFF);
             ; // beep off
@@ -124,7 +134,7 @@ void calibrate_shot(uint32_t low, uint32_t high)
         if (run_time != now)
         { // 1ms per loop
             run_time = now;
-            min_pulse = calc_average(pulse);
+            tmp_min = calc_average(pulse);
             if (now - last_time < 200)
                 motor->beep(TONE2, MotorIf::VOLUME_LOW); // beep on
             else if (now - last_time < 300)
@@ -160,6 +170,11 @@ void calibrate_shot(uint32_t low, uint32_t high)
     }
     printf("min throttle saved, ready to arm and start or reboot\n");
     timer->delay_ms(10);
+
+    max_pulse = tmp_max;
+    min_pulse = tmp_min;
+    valid_high = max_pulse * 1.01f;
+    valid_low = min_pulse * 0.99f;
 }
 
 void calibration(void)
@@ -226,19 +241,25 @@ void Oneshot::bind(Pin pin)
         [](uint32_t p)
         {
             pulse = p;
-            if (pulse < min_pulse - 100)
+            if (pulse < valid_low)
             {
                 frame_err++;
+                return;
             }
-            else if (pulse > max_pulse + 100)
+
+            if (pulse > valid_high)
             {
                 frame_err++;
+                return;
             }
-            else
-            {
+
                 data_updated = true;
                 frame_err = 0;
-            }
+            if (pulse < min_pulse)
+                pulse = min_pulse;
+            if (pulse > max_pulse)
+                pulse = max_pulse;
+
             throttle = (pulse - min_pulse) * 2000 / (max_pulse - min_pulse);
 
             if (config.mode_3d)
@@ -248,10 +269,6 @@ void Oneshot::bind(Pin pin)
 
             if (throttle < DEAD_AREA && throttle > -DEAD_AREA) // dead area
                 throttle = 0;
-            if (throttle > 2000)
-                throttle = 2000;
-            if (throttle < -2000)
-                throttle = -2000;
 
             if (config.spin_dir_reverse)
                 throttle = -throttle;

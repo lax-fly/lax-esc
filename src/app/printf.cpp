@@ -58,8 +58,8 @@ extern "C"
         if (debug_usart)
             return debug_usart->async_recv((uint8_t *)ptr, len);
         else
-            return 0;
 #endif
+            return 0;
     }
     int _write(int file, char *ptr, int len)
     {
