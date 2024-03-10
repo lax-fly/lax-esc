@@ -39,7 +39,6 @@ private:
     uint32_t cctrl_out_value;
     uint32_t cctrl_in_value;
     uint32_t it_enable;
-    uint32_t it_disable;
     uint32_t cctrl_in_high_value;
     uint32_t cctrl_in_low_value;
     uint32_t cctrl_in_both_value;

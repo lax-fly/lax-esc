@@ -127,7 +127,7 @@ CFLAGS += $(MCU) $(C_DEFS) $(OPT) -Wall -fdata-sections -ffunction-sections -D$(
 ifeq ($(DEBUG), 1)
 CFLAGS += -Og -g -gdwarf-2
 else
-CFLAGS += -O3 -DNDEBUG
+CFLAGS += -O3 -g -DNDEBUG
 endif
 
 # Generate dependency information

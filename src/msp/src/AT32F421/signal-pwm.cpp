@@ -120,7 +120,6 @@ inline void SignalPwm::tim_config(tmr_type *tim, tmr_channel_select_type ch)
     cctrl_out_value = cctrl_out_high_value;
     pwm_output = *tim_cm & ~io_dir_mask;
     it_enable = TMR_C1_INT << ch_idx;
-    it_disable = ~it_enable;
 
     tmr_output_enable(tim, TRUE);
     tmr_counter_enable(tim, TRUE);
@@ -318,7 +317,7 @@ void SignalPwm::set_mode(Mode mode)
         *tim_div = 0; // attention: the div value will only take effect in the next cycle, so there is some delay according to the cycle length
         cctrl_in_value = cctrl_in_both_value;
         cctrl_out_value = cctrl_out_low_value;
-        *tim_iden &= it_disable;
+        *tim_iden = enable_dma_request;
         break;
     default:
         break;

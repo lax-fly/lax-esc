@@ -59,7 +59,7 @@ enum State
 
 static TimerIf *timer;
 static SignalPwmIf *pwm;
-static uint64_t run_time;
+static uint64_t run_time = 0;
 static uint16_t buffer[32];
 static int rd_sz;
 static State state;
@@ -112,6 +112,7 @@ void Dshot::bind(Pin pin)
 {
     pwm = SignalPwmIf::new_instance(pin);
     pwm->set_mode(SignalPwmIf::PULSE_OUTPUT_CAPTURE);
+    timer->delay_ms(10);
     freq_lock = 0;
     frame_err = 0;
     restart();
@@ -143,7 +144,7 @@ void build_esc_info_telemetry(void)
         uint8_t res_ver;      // Indicates which response version is used. 254 is for BLHeli_32 version.
         uint8_t fw_ver;       // FW revision (32 = 32)
         uint8_t fw_sub_ver;   // FW sub revision (10 = xx.1, 11 = xx.11)
-        uint8_t unused1;       // Unused
+        uint8_t unused1;      // Unused
         uint8_t rotation_dir; // Rotation direction reversed by DShot command or not (1:0)
         uint8_t mode_3d;      // 3D mode active or not (1:0)
         uint8_t low_vol_prot; // Low voltage protection limit [0.1V] (255 = not capable, 0 = disabled)
@@ -151,7 +152,7 @@ void build_esc_info_telemetry(void)
         uint8_t led1;         // LED1 on or not (1:0, 255 = LED0 not present)
         uint8_t led2;         // LED2 on or not (1:0, 255 = LED0 not present)
         uint8_t led3;         // LED3 on or not (1:0, 255 = LED0 not present)
-        uint8_t unused2[7];    // Unused
+        uint8_t unused2[7];   // Unused
         uint8_t esc_sign[32]; // ESC signature
         uint8_t crc;          // CRC (same CRC as is used for telemetry)
     } esc_info;
@@ -288,9 +289,6 @@ void dshot_process(uint32_t dshot_bits)
 
 void proccess(void)
 {
-    if (rd_sz > 0) // it won't rise at the end of the last pulse
-        return;
-
     resp_time = now_us + 25; // 30us, 5us for error
     uint16_t dshot_bits = 0;
 
@@ -353,6 +351,7 @@ void proccess(void)
         state = PREPARING;
         frame_err = 0;
     }
+    restart();
 }
 
 const char gcr_table[16] = {
@@ -499,16 +498,17 @@ SEND_ERPM: // actually, the data sended is the period of erpm (1/erpm)
 
 void receive_dealing()
 {
-    proccess(); // one byte once to avoid long time cpu occupation
-    int rd_sz = pwm->recv_pulses();
-    if (rd_sz == sizeof(buffer) / sizeof(buffer[0]))
+    int left = pwm->recv_pulses();
+    if (left == sizeof(buffer) / sizeof(buffer[0]))
         return;
-    if (rd_sz == ::rd_sz)
+    if (rd_sz == left)
     { // no byte received over 20us, so restart frame
         restart();
         return;
     }
-    ::rd_sz = rd_sz;
+    rd_sz = left;
+    if (left == 0)
+        proccess();
 }
 
 void send_dealing()
@@ -544,7 +544,7 @@ void Dshot::poll(void)
     now_us = timer->now_us();
     if (run_time > now_us)
         return;
-    run_time += 6; // 6us, the max dshot bit length for 150kHz
+    run_time = now_us + 7; // 6us, the max dshot bit length for 150kHz
 
     if (state != RECEIVE)
         send_dealing();
