@@ -170,8 +170,7 @@ public:
     virtual void delay_ms(uint16_t nms) = 0;
     virtual uint32_t now_ms(void) const = 0;                             // return current time in ms
     virtual uint64_t now_us(void) const = 0;                             // returncurrent time in us
-    virtual void timing_task_1ms(Task task, void *data) = 0;             // support only one task, so caller make sure that the last task is finished before next calling
-    virtual void delay_task_us(uint32_t nus, Task task, void *data) = 0; // support only one task, so caller make sure that the last task is finished before next calling
+    virtual void timing_task_10kHz(Task task, void *data) = 0;             // support only one task, so caller make sure that the last task is finished before next calling
     static TimerIf *singleton();                                         // do not try to delete the returned object
 };
 

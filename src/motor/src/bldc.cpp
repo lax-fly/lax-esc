@@ -25,7 +25,7 @@ static int Commutate(int step);
 static int zero_cross_check(int current_step);
 static void update_state(void);
 static int get_nxt_step(int current_step, int edge);
-static void routine_1kHz(void *data);
+static void routine_10kHz(void *data);
 
 static ComparatorIf *cmp_a;
 static ComparatorIf *cmp_b;
@@ -182,22 +182,22 @@ Bldc::Bldc()
     if (min_throttle < DUTY_CYCLE(0.05f))
         min_throttle = DUTY_CYCLE(0.05f);
 
-    timer->timing_task_1ms(routine_1kHz, nullptr);
+    timer->timing_task_10kHz(routine_10kHz, nullptr);
 }
 
 Bldc::~Bldc()
 {
 }
 
-void routine_1kHz(void *data) // this determines pwm update frequency
-{
+void routine_10kHz(void *data) // this determines pwm update frequency
+{   // be careful, this function is running in interrupt context
     if (pwm_dutycycle < throttle)
     { /*
       limit speed up rate, throttle 0->2000 requires 100ms.
       careful to grow this, the faster, the easier to stall.
       I've tried 40, which is ok, but I use 20 for stability.
       */
-        pwm_dutycycle += 50;
+        pwm_dutycycle += 5;
     }
     else
         pwm_dutycycle = throttle; // speeding down immediately is permitted
