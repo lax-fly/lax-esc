@@ -13,7 +13,7 @@
 ######################################
 # target
 ######################################
-BOARD ?= at32f421_v1_0
+BOARD ?= at32f421_v1_1
 TARGET = $(BOARD)
 MCU_FAMILY = at32f421
 DEVICE = at32f421x8
@@ -37,7 +37,7 @@ LDSCRIPT := linker/$(MCU_FAMILY)_flash.ld
 # building variables
 ######################################
 # debug build?
-DEBUG ?= 1
+DEBUG ?= 0
 
 #######################################
 # paths
