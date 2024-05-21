@@ -65,7 +65,12 @@ extern "C"
     {
 #ifndef NDEBUG
         if (debug_usart)
-            debug_usart->async_send((uint8_t *)ptr, len);
+        {
+            if (ptr[0] == '\r')
+                debug_usart->sync_send((uint8_t *)ptr + 1, len - 1);
+            else
+                debug_usart->async_send((uint8_t *)ptr, len);
+        }
 #endif
         return len;
     }

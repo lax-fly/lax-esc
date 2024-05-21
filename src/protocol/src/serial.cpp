@@ -49,7 +49,6 @@ void Serial::proccess(void)
             }
             if (STR_CMP((char *)rx_buf, "arm") == 0)
             {
-                p += 9;
                 motor->arm(true);
             }
             restart();
@@ -70,7 +69,7 @@ void Serial::poll(void)
     if (rd_sz == 0)
         return;
     if (rd_sz == this->rd_sz && process_idx == rd_sz)
-    { // no byte received over 20us, so restart frame
+    { // no byte received over 1ms, so restart frame
         restart();
         return;
     }
@@ -78,7 +77,7 @@ void Serial::poll(void)
 }
 
 bool Serial::signal_lost()
-{
+{   // serial proto is for debug, so never timeout
     return false;
 }
 

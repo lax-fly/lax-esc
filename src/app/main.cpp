@@ -19,62 +19,53 @@ GpioIf *debug_pin = nullptr;
 
 uint8_t escInfoBuffer[64];
 
-enum State
-{
-    IDLE,
-    THROTTLE_DETECTED,
-    READY_FOR_ARM,
-    ARMED,
-    READY_TO_GO,
-};
-
-static State state = IDLE;
 uint32_t dshot_bits;
 Protocol::Type proto_type;
 int throttle;
 
-#define PRINT_RPM 1
-#define PRINT_DSHOT_DATA 2
-#define PRINT_PROTO 3
-#define PRINT_DEBUG PRINT_DSHOT_DATA
-
 void print_routine()
 {
+    static AdcIf *adc_bat = nullptr;
+    if (adc_bat == nullptr)
+        adc_bat = AdcIf::new_instance(ADC_BAT_PIN);
+
+    const char* proto;
     static uint32_t run_time = 0;
     if (run_time < timer->now_ms())
     {
         run_time = timer->now_ms() + 500;
-#if PRINT_DEBUG == PRINT_RPM
-        printf("rpm: %d cur:%lu\n", motor->get_rpm(), motor->get_current());
-#elif PRINT_DEBUG == PRINT_DSHOT_DATA
-        printf("%lu \n", dshot_bits);
-#elif PRINT_DEBUG == PRINT_PROTO
+
         switch (proto_type)
         {
         case Protocol::SERIAL:
-            printf("SERIAL\n");
+            proto = "SERIAL";
             break;
         case Protocol::DSHOT:
-            printf("DSHOT\n");
+            proto = "DSHOT";
             break;
         case Protocol::BRUSHED:
-            printf("BRUSHED\n");
+            proto = "BRUSHED";
             break;
         case Protocol::STD_PWM:
-            printf("STD_PWM: %lu\n", (uint32_t)(throttle * 2000));
+            proto = "STD_PWM";
             break;
         case Protocol::ONESHOT:
-            printf("ONESHOT: %lu\n", (uint32_t)(throttle * 2000));
+            proto = "ONESHOT";
             break;
         case Protocol::PROSHOT:
-            printf("PROSHOT\n");
+            proto = "PROSHOT";
             break;
 
         default: // AUTO_DETECT
-            printf("NONE\n");
+            proto = "NONE";
             break;
         }
-#endif
+        printf("prot: %s throt: %d rpm: %d cur: %u valt: %lu\n", 
+            proto,
+            motor->get_throttle(),
+            motor->get_rpm(), 
+            motor->get_current(), 
+            adc_bat->sample_voltage());
     }
 }
 

@@ -15,6 +15,7 @@ void Sound::power_on_tone(void)
 
 void Sound::throttle_signal_detected_tone(void)
 {
+    timer->delay_ms(200);
     motor->beep(TONE2, MotorIf::VOLUME_LOW);
     timer->delay_ms(500);
     motor->beep(TONE2, MotorIf::VOLUME_OFF);

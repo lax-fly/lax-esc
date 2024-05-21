@@ -21,7 +21,7 @@ static void reset_protocol(void)
 }
 
 volatile uint32_t pulse_cnt = 0;
-static uint32_t pulses[16] = {0};
+static uint32_t pulses[16] = {0};   // unit ns
 #define ARRAY_SZ(x) (sizeof(x) / sizeof(x[0]))
 Protocol::Type Protocol::auto_detect(Pin pin)
 {
@@ -44,7 +44,7 @@ REPEAT:
     {
         pulse_cnt = 0;
         uint32_t start;
-        uint32_t period[4] = {0};
+        uint32_t period[4] = {0};   // unit us
         while (pulse_cnt < 1)
             ;
         start = timer->now_us();
@@ -67,6 +67,12 @@ REPEAT:
             type = DSHOT;
             if (period[2] > min * 7 + 10 && period[3] > min * 7 + 10)
                 type = PROSHOT;
+            break;
+        }
+
+        if (pulses[0] > 6 * (period[0] * 1000 - pulses[0])) // SERIAL send 1s to shake hands
+        {
+            type = SERIAL;
             break;
         }
 

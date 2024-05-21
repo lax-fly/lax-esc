@@ -391,6 +391,11 @@ int Bldc::get_current() const
     return adc_cur->sample_voltage() * config.current_gain;
 }
 
+int Bldc::get_throttle() const
+{
+    return throttle;
+}
+
 void Bldc::set_throttle(int v)
 {
     bool dir_changed = false;
@@ -506,6 +511,7 @@ void Bldc::arm(bool state)
 
     if (!armed && state)
     {
+        timer->delay_ms(200);
         beep(TONE5, MotorIf::VOLUME_LOW);
         timer->delay_ms(500);
         beep(TONE5, MotorIf::VOLUME_OFF);
