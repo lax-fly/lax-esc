@@ -26,7 +26,7 @@ make download
 make BOARD=at32f421_v1_1 -j # the target board can be listed by 'make list', the board name should be the same as the suffix of file in the 'board' directory with prefix name 'board_'
 ```
 
-watch this [video]() for more details.
+watch this [video](https://www.bilibili.com/video/BV12x4y1W7Q2/?vd_source=43d9ea2f55b405b989b877e469b9fc2e) for more details.
 
 # debug mode
 
@@ -36,11 +36,11 @@ make -j DEBUG=1
 make download
 ```
 
-the serial print is only available in debug mode, the baudrate is fixed to 256000
+the serial print is only available in debug mode, the baudrate is fixed to 256000.
 to shake hands with esc using SERIAL protocol, the host must use baudrate 256000 to send at least 48 continuous 0xff to the esc.
 once using SERIAL protocol, the esc will never switch to other protocol automatically except reset.
 
-Warning: debug mode is costly, which increse the risk of stalling at fast rpm.
+Warning: debug mode is costly, which increase the risk of stalling at fast rpm.
 
 # SERIAL protocol
 

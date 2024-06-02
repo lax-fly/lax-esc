@@ -218,4 +218,4 @@ list:
 #######################################
 # dependencies
 #######################################
--include $(shell find $(BUILD_DIR) -name *.d)
+-include $(shell [ -d $(BUILD_DIR) ] && find $(BUILD_DIR) -name *.d)

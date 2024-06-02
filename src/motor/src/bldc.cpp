@@ -64,9 +64,11 @@ static uint64_t next_zero = 0;
 static uint64_t commutate_time;
 static uint32_t zero_interval;
 static uint64_t now;
+static uint64_t com_time = 0;
 
 static char is_pwm_changed = 1;
 static bool braking = false;
+static uint32_t stall_cnt = 0;
 
 #define VOLTAGE_1S (4200) // mV
 
@@ -175,12 +177,12 @@ Bldc::Bldc()
     set_throttle(0);
     batery_voltage = adc_bat->sample_voltage() * config.voltage_gain;
     batery_voltage = batery_voltage < VOLTAGE_1S ? VOLTAGE_1S : batery_voltage;
-    heavy_load_erpm = batery_voltage * config.kv / 1000 * config.polar_cnt / 2 / 4;
+    heavy_load_erpm = batery_voltage * config.kv / 1000 * config.polar_cnt / 2 / 4; // we treat 1/4 of empty load erpm as a heavy load erpm
     turn_dir_erpm = 450 * config.polar_cnt / 2;
 
-    min_throttle = 0.8f * 1000 * config.kv / batery_voltage; // 0.0004 = 0.05 * 11v / 1400kv
-    if (min_throttle < DUTY_CYCLE(0.05f))
-        min_throttle = DUTY_CYCLE(0.05f);
+    min_throttle = 0.5f * 1000 * config.kv / batery_voltage; // 0.0004 = 0.03 * 12v / 1400kv
+    if (min_throttle < DUTY_CYCLE(0.03f))
+        min_throttle = DUTY_CYCLE(0.03f);
 
     timer->timing_task_10kHz(routine_10kHz, nullptr);
 }
@@ -190,26 +192,29 @@ Bldc::~Bldc()
 }
 
 void routine_10kHz(void *data) // this determines pwm update frequency
-{   // be careful, this function is running in interrupt context
-    if (pwm_dutycycle < throttle)
+{                              // be careful, this function is running in interrupt context
+    if (__builtin_expect(throttle < min_throttle, false))
+        pwm_dutycycle = 0;
+    else if (__builtin_expect(pwm_dutycycle < throttle, true))
     { /*
-      limit speed up rate, throttle 0->2000 requires 100ms.
+      limit speed up rate, throttle 0->2000 requires 40ms.
       careful to grow this, the faster, the easier to stall.
-      I've tried 40, which is ok, but I use 20 for stability.
+      I've tried 10, which is ok, but I use 5 for stability.
       */
         pwm_dutycycle += 5;
     }
     else
         pwm_dutycycle = throttle; // speeding down immediately is permitted
 
-    if (pwm_dutycycle > 2000)
+    if (__builtin_expect(pwm_dutycycle > 2000, false))
         pwm_dutycycle = 2000;
 
-    // prevent motor from burning when stuck(or heavily loaded), the dutycycle will only cause motor to beep when stuck
-    if (erpm * 2000 < (uint32_t)(pwm_dutycycle * heavy_load_erpm))
+    // prevent motor from burning when stuck, the dutycycle will only cause motor to beep when stuck
+    if (__builtin_expect(stall_cnt > 3, false) && __builtin_expect(pwm_dutycycle > min_throttle, true))
         pwm_dutycycle = min_throttle;
 
-    if (braking)
+
+    if (__builtin_expect(braking, false))
     {
         pwm_dutycycle = 0;
         if (erpm < turn_dir_erpm) // braking util motor is slow enough
@@ -217,7 +222,7 @@ void routine_10kHz(void *data) // this determines pwm update frequency
     }
 
     pwm_freq = config.startup_freq + erpm; // e.g. 1400kV motor using 3S -> max erpm = 117600
-    if (pwm_freq > config.max_pwm_freq)    // limit the max pwm freqence
+    if (__builtin_expect(pwm_freq > config.max_pwm_freq, true))    // limit the max pwm freqence
         pwm_freq = config.max_pwm_freq;
 
     pwm_period = 1000000 / pwm_freq;
@@ -258,7 +263,7 @@ void update_state(void)
 
     speed_change_limit = zero_interval / 2 + zero_interval / 4;
 }
-uint64_t com_time = 0;
+
 int Commutate(int step)
 {
     if (now < commutate_time)
@@ -323,7 +328,7 @@ int zero_cross_check(int current_step)
     static int8_t cmp_res = -1;
 
     if (stall)
-        cmp_res = !last_res;
+        cmp_res = !last_res; // force to commutate for start up
     else
     {
         last_res = cmp_res;
@@ -391,10 +396,17 @@ int Bldc::get_current() const
     return adc_cur->sample_voltage() * config.current_gain;
 }
 
+#ifndef NDEBUG
 int Bldc::get_throttle() const
 {
     return throttle;
 }
+
+int Bldc::get_real_throttle() const
+{
+    return (int)pwm_dutycycle;
+}
+#endif
 
 void Bldc::set_throttle(int v)
 {
@@ -450,13 +462,15 @@ void Bldc::poll()
 
     static int step = 0;
     static int edge = 0;
+    static int sync = 0;
 
-    if (is_pwm_changed)
+    if (__builtin_expect(is_pwm_changed, false))
     {
         set_dutycycle(pwm_dutycycle); // changing dutycycle or frequency must be synchronous with the commutation for stablization
         set_frequency(pwm_freq);
         is_pwm_changed = 0;
     }
+
     if (edge)
     {
         if (Commutate(step) == 0)
@@ -470,7 +484,18 @@ void Bldc::poll()
         if (edge)
         {
             update_state();
-            step = get_nxt_step(step, edge);
+            int nxt_step = get_nxt_step(step, edge);
+            if (nxt_step != (step + 1) % 6)
+            {
+                stall_cnt++;
+                sync = 0;
+            }
+            else
+            {
+                if (++sync > 12)
+                    stall_cnt = 0;
+            }
+            step = nxt_step;
         }
     }
 }

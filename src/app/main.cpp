@@ -23,6 +23,7 @@ uint32_t dshot_bits;
 Protocol::Type proto_type;
 int throttle;
 
+#ifndef NDEBUG
 void print_routine()
 {
     static AdcIf *adc_bat = nullptr;
@@ -60,14 +61,16 @@ void print_routine()
             proto = "NONE";
             break;
         }
-        printf("prot: %s throt: %d rpm: %d cur: %u valt: %lu\n", 
+        printf("prot: %s throt: %d pwm: %d rpm: %d cur: %u valt: %lu\n", 
             proto,
             motor->get_throttle(),
+            motor->get_real_throttle(),
             motor->get_rpm(), 
             motor->get_current(), 
-            adc_bat->sample_voltage());
+            adc_bat->sample_voltage() * config.voltage_gain);
     }
 }
+#endif
 
 #define PWM_TEST 0
 uint32_t pulse;
@@ -149,7 +152,7 @@ int main(void)
     sound->throttle_signal_detected_tone();
     while (1) // don't make one loop take more than 10us, motor->poll must be called once per <10us
     {
-        if (proto->signal_lost())
+        if (__builtin_expect(proto->signal_lost(), false))
         {
             proto_type = Protocol::auto_detect(SIGNAL_IN_PIN);
             proto = Protocol::singleton(proto_type, SIGNAL_IN_PIN);
